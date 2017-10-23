@@ -1,2 +1,3 @@
-# socket-github
-# sample-heroku-github-connect
+### sample-heroku-github-connect 
+
+`npm install` 
