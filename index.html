@@ -1,26 +1,19 @@
 <html>
 
 <body>
-  <p id='server-time'></p>
-  <p>Changed?</p>
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    var socket = io();
-    var el = document.getElementById('server-time');
-    socket.on('time', function (timeString) {
-      el.innerHTML = 'Server time: ' + timeString;
-    });
+    
+    <h1>Philippine time</h1>
+    <p id='server-time'></p>
 
-    var rates = [32, 20, 3, 8, 50, 22];
-    function changeThis() {
-      socket.emit('send-rate',
-        {
-          rate: rates,
-          value: 32,
-          monthChanged: 'January'
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        var socket = io();
+
+        var el = document.getElementById('server-time');
+        socket.on('time', function (timeString) {
+            el.innerHTML = 'Server time: ' + timeString;
         });
-    }
-  </script>
+    </script>
 </body>
 
 </html>
