@@ -1,0 +1,28 @@
+{
+    "employeeTimeIn":[
+        {
+            "id": 323,
+            "employeeid": 4324,
+            "timein": "Tue Jan 09 2018 13:33:14 GMT+0800 (+08)",
+            "picUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQf6aaQJAo291z97N4QtmDBsG_WhZ9puznRWdlSLIKC5h6RtgqgeQ",
+            "map": {
+                "long": 34232,
+                "lat": 321
+            },
+            "batteryStatus": 323,
+            "messages": [
+                {
+                    "isMe": true,
+                    "content": "hello"
+                }
+            ],
+            "isseen": false
+        }
+    ],
+    "employee": [
+        {
+            "id": 4324,
+            "name": "Russel Westbrook"
+        }
+    ]
+}
