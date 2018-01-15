@@ -106,41 +106,53 @@ io.on('connection', (socket) => {
             response => {
                 cloudinary.uploader.upload(socketdata.b64, function(uploadresult) {
                     let employeeTimeIn = response.body[0];
-                    unirest.post(`${DBHOST}/employeeTimeIn`)
-                    .headers({'Accept': 'application/json', 'Content-Type': 'application/json'})
-                    .send(
-                        {
-                            id: (employeeTimeIn.id + 1),
-                            employeeid: socketdata.employeeid,
-                            timein: socketdata.time,
-                            pic: uploadresult.secure_url,
-                            map: socketdata.map,
-                            batteryStatus: socketdata.bt,
-                            isseen: false
-                        }
-                    )
+                    unirest.get(`http://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.long}`)
                     .end(
-                        r => {
-                            unirest.get(`${DBHOST}/employees?id=${socketdata.employeeid}`)
+                        formattedAddress => {
+                            console.log(formattedAddress.body.results[0].formatted_address);
+                            unirest.post(`${DBHOST}/employeeTimeIn`)
+                            .headers({'Accept': 'application/json', 'Content-Type': 'application/json'})
+                            .send(
+                                {
+                                    id: (employeeTimeIn.id + 1),
+                                    employeeid: socketdata.employeeid,
+                                    timein: socketdata.time,
+                                    pic: uploadresult.secure_url,
+                                    map: {
+                                        formattedaddress: formattedAddress.body.results[0].formatted_address,
+                                        long: socketdata.map.long,
+                                        lat: socketdata.map.lat
+
+                                    },                                    
+                                    batteryStatus: socketdata.bt,
+                                    isseen: false
+                                }
+                            )
                             .end(
-                                rr => {
-                                    let employee = rr.body[0];
-                                    if(socketdata.msg){
-                                        ////add new message on message history
-                                    }
-                                    let data = {
-                                        notificationid: (employeeTimeIn.id + 1),
-                                        name: employee.name,
-                                        isseen: false,  
-                                        picthumb: employee.picthumb ? employee.picthumb : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRYeS4S-XjMeN8MCz5Bf-WvwFGMvYy4lmXq2FoICy84hg5v1Oh9yQ"
-                                    };
-                                    io.emit('sv-newnotification', data);
-                                    console.log(data);
+                                r => {
+                                    unirest.get(`${DBHOST}/employees?id=${socketdata.employeeid}`)
+                                    .end(
+                                        rr => {
+                                            let employee = rr.body[0];
+                                            if(socketdata.msg){
+                                                ////add new message on message history
+                                            }
+                                            let data = {
+                                                notificationid: (employeeTimeIn.id + 1),
+                                                name: employee.name,
+                                                isseen: false,  
+                                                picthumb: employee.picthumb ? employee.picthumb : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRYeS4S-XjMeN8MCz5Bf-WvwFGMvYy4lmXq2FoICy84hg5v1Oh9yQ"
+                                            };
+                                            io.emit('sv-newnotification', data);
+                                            console.log(data);
+                                        }
+                                    );
+                                    
                                 }
                             );
-                            
                         }
-                    );
+                    )
+                    
                 });
                 
             }
@@ -150,11 +162,9 @@ io.on('connection', (socket) => {
     });
 
     socket.on('cl-getnotificationdetails', socketdata => {
-        //console.log(socketdata);
         unirest.get(`${DBHOST}/employeeTimeIn?id=${socketdata.notificationid}`)
         .end(
             response => {
-                unirest.put
                 let _employeeTimeIn = response.body[0];
                 io.emit('sv-servenotificationdetails', {
                     timein: _employeeTimeIn.timeIn,
@@ -169,6 +179,7 @@ io.on('connection', (socket) => {
                 })
                 .end(
                     response => {
+                        console.log(response.body ? 'Success' : 'Failed');
                     }
                 );               
             }
@@ -181,7 +192,6 @@ io.on('connection', (socket) => {
     });
     
     socket.on('cl-sendmessage', socketdata => {
-        // io.sockets.in(data.roomId).emit('new msg', data.text);
         io.emit('sv-newmessagetoadmin', socketdata);
     })
 
@@ -192,6 +202,16 @@ io.on('connection', (socket) => {
             time: socketdata.time
         });
     })
+
+    socket.on('cl-getinitlog', socketdata => {
+        unirest.get(`${DBHOST}/employeeTimeIn?employeeid=${socketdata.employeeid}&_limit=20&_sort=timeIn&_order=desc`)
+        .end(
+            response => {
+                // console.log(response.body);
+                    io.emit('sv-sendinitemployeelog', {logs: response.body});
+            }
+        );
+    });
 
     
 
