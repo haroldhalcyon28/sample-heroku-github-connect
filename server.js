@@ -7,6 +7,39 @@ const unirest = require('unirest');
 const PORT = process.env.PORT || 8080;
 const INDEX = path.join(__dirname, 'index.html');
 const DBHOST = 'http://192.168.1.73:3000';
+const Employee = require('./models/employee');
+const EmployeeTimeIn = require('./models/employee-time-in');
+
+
+
+const mongoose = require('mongoose');
+const database = require('./config/database');
+mongoose.connect(database.uri, { useMongoClient: true});
+// On Connection
+mongoose.connection.on('connected', () => {console.log('Connected to Database ')});
+// On Error
+mongoose.connection.on('error', (err) => {console.log('Database error '+err)});
+
+// let newEmployee = new Employee(
+//     {
+//         name: {
+//             firstName: 'michael',
+//             lastName: 'jordan',
+//             middleName: ''
+//         },
+//         pic: {
+//             original: 'http://i.imgur.com/98dZbMp.jpg',
+//             thumb: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSdns3GwDPKCgqXxCmR-XRpAK17xi87HwQYuCBoGjsPe56vlbY5'
+//         },
+//         messages: []
+//     }
+// )
+// Employee.addNew(newEmployee, (err, employee) => {
+//     if (err) throw err;
+//     console.log(employee);
+// })
+
+// return;
 
 const cloudinary = require('cloudinary');
 cloudinary.config({ 
@@ -41,149 +74,96 @@ const server = express()
     .listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
 const io = socketIO(server);
 
-var initialRate = {
-    jan: 5,
-    feb: 30,
-    mar: 3,
-    apr: 8,
-    may: 50,
-    jun: 22,
-};
 
 io.on('connection', (socket) => {
     console.log(`Client connected with ID: ${socket.id}`);
+    
 
-    socket.on('cl-getinitnotif', () => {
-        unirest.get(`${DBHOST}/employeeTimeIn?_page=1&_limit=20&_sort=id&_order=asc`)
-        .end(
-            response => {
-                    var itemCount = (response.body).length;
-                    var data = [];
-                    //console.log(response.body);
-                    if(!itemCount) {
-                        io.emit('sv-sendinitnotif', data);
-                        return;
-                    }
-                    var x = 0;
-                    var getInitNotif = () => {
-                        _getInitNotif(() => {
-                            let item = response.body[x];
-                            unirest.get(`${DBHOST}/employees/${item.employeeid}`).end(
-                                r => {
-                                    let i = {
-                                        notificationid: item.id,
-                                        name: r.body.name,
-                                        isseen: item.isseen,
-                                        picthumb: r.body.picthumb ? r.body.picthumb : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRYeS4S-XjMeN8MCz5Bf-WvwFGMvYy4lmXq2FoICy84hg5v1Oh9yQ"
-                                    };
-                                    x++;
-                                    data.push(i);
-                                    if(x != itemCount){
-                                        getInitNotif();
-                                    }
-                                    else{
-                                        io.emit('sv-sendinitnotif', data);
-                                    }
-                                }
-                            );
-                        });
-                       
-                    }
-                    var _getInitNotif =  callback => {
-                        callback();
-                    }
-                    getInitNotif();
-            }
-        );
+    socket.on('cl-getInitNotif', () => {
+        console.log(`Admin is requesting initial notifications\nSocketId: ${socket.id}`);
+        EmployeeTimeIn.find({})
+        .populate(
+            {
+                path:'employee',
+                select: 'name  pic'
+            })
+        .limit(20)
+        .exec(function (err, employeeTimeIns) {
+            if (err) return handleError(err);
+            employeeTimeIns = employeeTimeIns.map(timeIn => {
+                return {
+                    id: timeIn.id,
+                    name: timeIn.employee.name,
+                    pic: timeIn.employee.pic.thumb,
+                    timeIn: timeIn.timeIn,
+                    isSeen: timeIn.isSeen
+                }
+            })
+            console.log('Initial notifications succesfully sent to admin');
+            io.emit('sv-sendInitNotif', employeeTimeIns);
+        });
     });
 
 
-    socket.on('cl-timein', socketdata => {
-        console.log('socketdata: ');
-        console.log( socketdata);
-        unirest.get(`${DBHOST}/employeeTimeIn?_sort=id&_order=desc&_start=0&_limit=1`)
-        .end(
-            response => {
-                cloudinary.uploader.upload(socketdata.b64, function(uploadresult) {
-                    let employeeTimeIn = response.body[0];
-                    unirest.get(`http://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.long}`)
-                    .end(
-                        formattedAddress => {
-                            console.log(formattedAddress.body.results[0].formatted_address);
-                            unirest.post(`${DBHOST}/employeeTimeIn`)
-                            .headers({'Accept': 'application/json', 'Content-Type': 'application/json'})
-                            .send(
-                                {
-                                    id: (employeeTimeIn.id + 1),
-                                    employeeid: socketdata.employeeid,
-                                    timein: socketdata.time,
-                                    pic: uploadresult.secure_url,
-                                    map: {
-                                        formattedaddress: formattedAddress.body.results[0].formatted_address,
-                                        long: socketdata.map.long,
-                                        lat: socketdata.map.lat
+    socket.on('cl-timeIn', socketdata => {
+        Employee.findById(socketdata.employeeId, (err, employee) => {
 
-                                    },                                    
-                                    batteryStatus: socketdata.bt,
-                                    isseen: false
-                                }
-                            )
-                            .end(
-                                r => {
-                                    unirest.get(`${DBHOST}/employees?id=${socketdata.employeeid}`)
-                                    .end(
-                                        rr => {
-                                            let employee = rr.body[0];
-                                            if(socketdata.msg){
-                                                ////add new message on message history
-                                            }
-                                            let data = {
-                                                notificationid: (employeeTimeIn.id + 1),
-                                                name: employee.name,
-                                                isseen: false,  
-                                                picthumb: employee.picthumb ? employee.picthumb : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRYeS4S-XjMeN8MCz5Bf-WvwFGMvYy4lmXq2FoICy84hg5v1Oh9yQ"
-                                            };
-                                            io.emit('sv-newnotification', data);
-                                            console.log(data);
-                                        }
-                                    );
-                                    
-                                }
-                            );
-                        }
-                    )
-                    
-                });
-                
+            if (err) throw err
+            if (!employee) {
+                console.log(`_id ${socketdata.employeeId} not found`);
+                return;
             }
-        );
+            console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
 
-        
+            let employeeTimeIn = new EmployeeTimeIn({
+                employee: socketdata.employeeId,
+                timeIn: socketdata.timeIn,
+                pic: {
+                    original: 'save original',
+                    thumb: 'thumb'
+                },
+                map: {
+                    lng: socketdata.map.lng,
+                    lat: socketdata.map.lat,
+                    formattedAddress: 'pasig'
+                },
+                batteryStatus: socketdata.batteryStatus
+            });
+
+            EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
+                if (err) throw err;
+                console.log(`Time In of ${employee.name.firstName} ${employee.name.lastName} successfully saved\n`);
+                let data = {
+                    notificationId: timeIn.id,
+                    name: employee.name,
+                    timeIn: timeIn.timeIn,
+                    isSeen: false,
+                    picThumb: employee.pic.thumb ? employee.pic.thumb : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRYeS4S-XjMeN8MCz5Bf-WvwFGMvYy4lmXq2FoICy84hg5v1Oh9yQ"
+                };
+
+                io.emit('sv-newnotification', data);
+                // emit to user that time in is successfully saved
+            });
+        })        
     });
 
-    socket.on('cl-getnotificationdetails', socketdata => {
-        unirest.get(`${DBHOST}/employeeTimeIn?id=${socketdata.notificationid}`)
-        .end(
-            response => {
-                let _employeeTimeIn = response.body[0];
-                io.emit('sv-servenotificationdetails', {
-                    timein: _employeeTimeIn.timeIn,
-                    pic: _employeeTimeIn.pic,
-                    map: _employeeTimeIn.map,
-                    batteryStatus: _employeeTimeIn.batteryStatus
-                })
-                unirest.patch(`${DBHOST}/employeeTimeIn/${socketdata.notificationid}`)
-                .headers({'Accept': 'application/json', 'Content-Type': 'application/json'})
-                .send({
-                    isseen: true
-                })
-                .end(
-                    response => {
-                        console.log(response.body ? 'Success' : 'Failed');
-                    }
-                );               
-            }
-        );
+    socket.on('cl-getNotifDetails', socketdata => {
+        console.log('Admin requesting notification details')
+        EmployeeTimeIn.findByIdAndUpdate(socketdata.id, {
+            isSeen: true,
+            seenAt: Math.floor(Date.now() /1000)
+        }, (err, employeeTimeIn) =>{
+            if (err) throw err;
+            io.emit('sv-serveNotifDetails', {
+                id: employeeTimeIn.id,
+                pic: employeeTimeIn.pic,
+                map: employeeTimeIn.map,
+                timeIn: employeeTimeIn.timeIn,
+                batteryStatus: employeeTimeIn.batteryStatus
+            })
+            console.log('Notification details succesfully sent to admin');
+            //emit to client that his notification is seen by admin
+        })
     });
 
 
@@ -213,7 +193,42 @@ io.on('connection', (socket) => {
         );
     });
 
-    
+    socket.on('cl-getInitMessages', socketData => {
+        ///sort and limit the result
+        console.log('Request initial message history of selected employee');
+        EmployeeTimeIn.findById(socketData.notificationId, (err, employeeTimeIn) =>{
+            if (err) throw err;
+            Employee.findById(employeeTimeIn.employee, (err, employee) =>{
+                if (err) throw err;
+                console.log('Initial message history for selected employee successfully sent');
+                io.emit('sv-sendInitMessages', {
+                    id: employee.id,
+                    messages: employee.messages,
+                    pic: employee.pic,
+
+                })                
+            })
+        })
+    });
+
+    // if admin set isMe = false, employee set isMe = true
+    socket.on('cl-sendNewMessage', socketData => {
+        console.log(`${socketData.isMe ? 'Employee' : 'Admin'} sending new message`);
+        Employee.findByIdAndUpdate(socketData.employeeId, {
+            $push: {'messages': {
+                isMe: socketData.isMe,
+                content: socketData.content}}
+        }, (err, employee) => {
+            if (err) throw err;
+            console.log(employee);
+            console.log('New message saved');
+            // io.emit('sv-newMessage', {
+            //     content: socketData.content
+            // })
+            //if admin, emit to client new message
+        })
+    });
+
 
     socket.on('disconnect', () => console.log('Client disconnected'));
 });
