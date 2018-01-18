@@ -1,3 +1,5 @@
+
+
 'use strict';
 
 const express = require('express');
@@ -48,12 +50,6 @@ cloudinary.config({
     api_secret: 'zO8KRwUwA1A-zINxpKrkRO-CINs' 
   });
 
-// cloudinary.uploader.upload("http://www.lovemarks.com/wp-content/uploads/profile-avatars/default-avatar-ginger-guy.png",function(result) { 
-//     console.log(result)
-//     console.log(cloudinary.image(result.secure_url, { width: 100, height: 150, crop: 'fill' }));
-    
-// });
-
 
 // for changing console to debug and for adding log time
 var DEBUG = (function () {
@@ -87,7 +83,8 @@ io.on('connection', (socket) => {
                 path:'employee',
                 select: 'name  pic'
             })
-        .limit(20)
+        .limit(120)
+        .sort({timeIn: -1})
         .exec(function (err, employeeTimeIns) {
             if (err) return handleError(err);
             employeeTimeIns = employeeTimeIns.map(timeIn => {
@@ -107,43 +104,63 @@ io.on('connection', (socket) => {
 
     socket.on('cl-timeIn', socketdata => {
         Employee.findById(socketdata.employeeId, (err, employee) => {
-
-            if (err) throw err
-            if (!employee) {
+            let success = false;
+            if (err) {
+                console.log(err);
+            } else if (!employee) {
                 console.log(`_id ${socketdata.employeeId} not found`);
-                return;
+            } else {
+                console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
+                cloudinary.v2.uploader.upload(socketdata.pic,function(err, result) {
+                    if (err) {
+                        console.log(err);
+                    } else {
+                        console.log(`Selfie of ${employee.name.firstName} ${employee.name.lastName} successfully uploaded`);
+                        unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
+                            .end(
+                                response => {
+                                    let employeeTimeIn = new EmployeeTimeIn({
+                                        employee: socketdata.employeeId,
+                                        timeIn: socketdata.timeIn,
+                                        pic: {
+                                            original: result.secure_url,
+                                            thumb: result.secure_url
+                                        },
+                                        map: {
+                                            lng: socketdata.map.lng,
+                                            lat: socketdata.map.lat,
+                                            formattedAddress: response.body.results[0].formatted_address
+                                        },
+                                        batteryStatus: socketdata.batteryStatus
+                                    });
+                        
+                                    EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
+                                        if (err) {
+                                            console.log(err);
+                                        } else {
+                                            console.log(`Time In of ${employee.name.firstName} ${employee.name.lastName} successfully saved\n`);
+                                            io.to(socket.id).emit('sv-successTimeIn', {success: true});
+                                            console.log(`Response confirmation of time in succesfully sent to ${employee.name.firstName} ${employee.name.lastName}`)
+
+                                            io.emit('sv-newNotification', {
+                                                id: employeeTimeIn.id,
+                                                isSeen: false,
+                                                name: {
+                                                    firstName: employee.name.firstName,
+                                                    middleName: employee.name.middleName, 
+                                                    lastName: employee.name.lastName,
+                                                },
+                                                pic: employee.pic.thumb,
+                                                timeIn: employeeTimeIn.timeIn
+                                            });
+                                        }
+                                        
+                                    });
+                                }
+                            );                                        
+                    } 
+                });
             }
-            console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
-
-            let employeeTimeIn = new EmployeeTimeIn({
-                employee: socketdata.employeeId,
-                timeIn: socketdata.timeIn,
-                pic: {
-                    original: 'save original',
-                    thumb: 'thumb'
-                },
-                map: {
-                    lng: socketdata.map.lng,
-                    lat: socketdata.map.lat,
-                    formattedAddress: 'pasig'
-                },
-                batteryStatus: socketdata.batteryStatus
-            });
-
-            EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
-                if (err) throw err;
-                console.log(`Time In of ${employee.name.firstName} ${employee.name.lastName} successfully saved\n`);
-                let data = {
-                    notificationId: timeIn.id,
-                    name: employee.name,
-                    timeIn: timeIn.timeIn,
-                    isSeen: false,
-                    picThumb: employee.pic.thumb ? employee.pic.thumb : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRYeS4S-XjMeN8MCz5Bf-WvwFGMvYy4lmXq2FoICy84hg5v1Oh9yQ"
-                };
-
-                io.emit('sv-newnotification', data);
-                // emit to user that time in is successfully saved
-            });
         })        
     });
 
@@ -212,17 +229,33 @@ io.on('connection', (socket) => {
     });
 
     // if admin set isMe = false, employee set isMe = true
+    
+
     socket.on('cl-sendNewMessage', socketData => {
+        console.log(socketData);
         console.log(`${socketData.isMe ? 'Employee' : 'Admin'} sending new message`);
+        let newMessage = {
+            isMe: socketData.isMe,
+            content: socketData.content,
+            sentAt: Math.floor(Date.now() /1000)
+        }
+
         Employee.findByIdAndUpdate(socketData.employeeId, {
-            $push: {'messages': {
-                isMe: socketData.isMe,
-                content: socketData.content}}
+            $push: {'messages': newMessage}
         }, (err, employee) => {
             if (err) throw err;
-            console.log(employee);
             console.log('New message saved');
-            // io.emit('sv-newMessage', {
+            io.to(socket.id).emit('sv-messageSent', {success: true})
+
+            if (socketData.isMe) {
+                io.emit('sv-newMessageFromEmployee', newMessage)
+                
+            }
+            else{
+                console.log(newMessage)
+                io.emit('sv-newMessageFromAdmin', newMessage)
+            }
+            
             //     content: socketData.content
             // })
             //if admin, emit to client new message
@@ -230,7 +263,9 @@ io.on('connection', (socket) => {
     });
 
 
-    socket.on('disconnect', () => console.log('Client disconnected'));
+    socket.on('disconnect', () => {
+
+        console.log('Client disconnected with ID: ' + socket.id)});
 });
 
 setInterval(() => io.emit('time', new Date().toTimeString()), 1000);

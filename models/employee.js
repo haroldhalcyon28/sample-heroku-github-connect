@@ -21,10 +21,7 @@ const employeeSchema = new Schema({
                 _id: false,
                 isMe:Boolean,
                 content: String,
-                sentAt: {
-                    type: Number,
-                    default: Math.floor(Date.now() /1000)
-                }
+                sentAt: Number
             }
         ],
         createdAt: {
