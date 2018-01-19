@@ -25,13 +25,13 @@ mongoose.connection.on('error', (err) => {console.log('Database error '+err)});
 // let newEmployee = new Employee(
 //     {
 //         name: {
-//             firstName: 'michael',
-//             lastName: 'jordan',
+//             firstName: 'Jes',
+//             lastName: 'Paz',
 //             middleName: ''
 //         },
 //         pic: {
-//             original: 'http://i.imgur.com/98dZbMp.jpg',
-//             thumb: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSdns3GwDPKCgqXxCmR-XRpAK17xi87HwQYuCBoGjsPe56vlbY5'
+//             original: 'https://trello-avatars.s3.amazonaws.com/86b9d2dcf35b7a7ca6525b1208401649/original.png',
+//             thumb: 'https://trello-avatars.s3.amazonaws.com/86b9d2dcf35b7a7ca6525b1208401649/50.png'
 //         },
 //         messages: []
 //     }
@@ -73,7 +73,6 @@ const io = socketIO(server);
 
 io.on('connection', (socket) => {
     console.log(`Client connected with ID: ${socket.id}`);
-    
 
     socket.on('cl-getInitNotif', () => {
         console.log(`Admin is requesting initial notifications\nSocketId: ${socket.id}`);
@@ -83,19 +82,22 @@ io.on('connection', (socket) => {
                 path:'employee',
                 select: 'name  pic'
             })
-        .limit(120)
+        .limit(20)
         .sort({timeIn: -1})
         .exec(function (err, employeeTimeIns) {
             if (err) return handleError(err);
-            employeeTimeIns = employeeTimeIns.map(timeIn => {
-                return {
-                    id: timeIn.id,
-                    name: timeIn.employee.name,
-                    pic: timeIn.employee.pic.thumb,
-                    timeIn: timeIn.timeIn,
-                    isSeen: timeIn.isSeen
-                }
-            })
+            if (employeeTimeIns.length) {
+                employeeTimeIns = employeeTimeIns.map(timeIn => {
+                    return {
+                        id: timeIn.id,
+                        name: timeIn.employee.name,
+                        pic: timeIn.employee.pic.thumb,
+                        timeIn: timeIn.timeIn,
+                        isSeen: timeIn.isSeen
+                    }
+                })
+            } 
+            
             console.log('Initial notifications succesfully sent to admin');
             io.emit('sv-sendInitNotif', employeeTimeIns);
         });
@@ -183,6 +185,13 @@ io.on('connection', (socket) => {
         })
     });
 
+    socket.on('cl-typing', socketData => {
+        if (socketData.isEmployee) {
+            io.emit('sv-employeeTyping');
+        } else {
+            io.emit('sv-adminTyping');
+        }
+    })
 
     socket.on('cl-join-room', function(roomId){
         socket.join(roomId);
@@ -218,12 +227,7 @@ io.on('connection', (socket) => {
             Employee.findById(employeeTimeIn.employee, (err, employee) =>{
                 if (err) throw err;
                 console.log('Initial message history for selected employee successfully sent');
-                io.emit('sv-sendInitMessages', {
-                    id: employee.id,
-                    messages: employee.messages,
-                    pic: employee.pic,
-
-                })                
+                io.emit('sv-sendInitMessages', employee);        
             })
         })
     });
@@ -248,8 +252,10 @@ io.on('connection', (socket) => {
             io.to(socket.id).emit('sv-messageSent', {success: true})
 
             if (socketData.isMe) {
+                newMessage.employeeId = socketData.employeeId;
                 io.emit('sv-newMessageFromEmployee', newMessage)
-                
+                console.log(newMessage);
+
             }
             else{
                 console.log(newMessage)
@@ -268,7 +274,6 @@ io.on('connection', (socket) => {
         console.log('Client disconnected with ID: ' + socket.id)});
 });
 
-setInterval(() => io.emit('time', new Date().toTimeString()), 1000);
 
 
 // You can solve it by two ways.
