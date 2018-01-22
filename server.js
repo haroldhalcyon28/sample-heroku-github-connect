@@ -268,6 +268,56 @@ io.on('connection', (socket) => {
         })
     });
 
+    socket.on('cl-getRecentTimeIns', socketData => {
+        console.log('Admin requesting employees recent time ins');
+        EmployeeTimeIn.aggregate(
+            [   { "$lookup": {
+                        "from": "employees",
+                        "localField": "employee",
+                        "foreignField": "_id",
+                        "as": "employeeDetails"
+                    }
+                },
+                { 
+                    "$project" : { 
+                        "_id": 1,
+                        "employee": 1,
+                        "map": 1,
+                        "employeeDetails._id": 1,
+                        "employeeDetails.name": 1,
+                        "employeeDetails.pic": 1,
+                        "timeIn": 1
+                    } 
+                },
+                { "$sort": {"timeIn": -1 } },
+                { "$group": {
+                    "_id": "$employee",
+                    "employee": {"$first": "$_id"},
+                    "map": { "$first": "$map" },
+                    "timeIn": {"$first": "$timeIn"},
+                    "employeeDetails": {"$first": "$employeeDetails"}
+                }}
+            ])
+        .exec((err, result) =>{
+            
+            let employeeTimeIns = result.map(employeeTimeIn => {
+                let e = employeeTimeIn.employee;
+                employeeTimeIn.employee = employeeTimeIn.employeeDetails[0];
+                employeeTimeIn.employeeDetails = undefined;
+                employeeTimeIn._id = e; 
+                return employeeTimeIn;
+            })
+
+            io.emit('sv-sendRecentTimeIns', employeeTimeIns);
+            console.log('Employees recent time ins successfully sent to admin');
+            
+        })
+
+        
+    })
+
+
+
 
     socket.on('disconnect', () => {
 
