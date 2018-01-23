@@ -11,6 +11,8 @@ const INDEX = path.join(__dirname, 'index.html');
 const DBHOST = 'http://192.168.1.73:3000';
 const Employee = require('./models/employee');
 const EmployeeTimeIn = require('./models/employee-time-in');
+const SocketClient = require('./models/socket-client');
+
 
 
 
@@ -68,12 +70,98 @@ var DEBUG = (function () {
 const server = express()
     .use((req, res) => res.sendFile(INDEX))
     .listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
-const io = socketIO(server);
+const io = socketIO(server, {
+    pingTimeout: 1000
+});
+
+// const io = socketIO(server);
+
+SocketClient.remove({}, function(err, row) {
+    if (err) {
+        console.log("Collection couldn't be removed" + err);
+        return;
+    }
+    console.log("SocketClient collection removed");
+})
 
 
 io.on('connection', (socket) => {
+
     console.log(`Client connected with ID: ${socket.id}`);
 
+    socket.on('cl-sendEmployeeId', socketData => {
+        let newSocketClient = new SocketClient(
+            {
+                socketId: socket.id,
+                employeeId: socketData.employeeId,
+            }
+        )
+        
+        SocketClient.addNew(newSocketClient, (err, socketClient) => {
+            if (err) {
+                console.log(err);
+            } else {
+                console.log('New socket client added!');
+            }
+            
+        })
+    })
+
+    
+    socket.on('cl-getInitNotifEmployee', (socketData) => {
+        console.log(`Employee is requesting initial notifications\nSocketId: ${socket.id}`);
+        EmployeeTimeIn.find({employee: socketData.employeeId})
+        .limit(20)
+        .sort({timeIn: -1})
+        .exec(function (err, employeeTimeIns) {
+            if (err) {
+                console.log(err);
+            }
+            else{
+                socket.emit('sv-sendInitNotif', employeeTimeIns);
+                console.log('Initial notifications succesfully sent to employee');
+            }
+
+        });
+    })
+
+    socket.on('cl-getEmployeeStatus', socketData => {
+        SocketClient.findOne({employeeId: socketData.employeeId})
+        .exec((err, socketClient) =>{
+            if (err) {
+                console.log(err)
+            }
+            if (socketClient) {
+                console.log('Admin requesting status of selected employee');
+                io.to(socketClient.socketId).emit('sv-myCurrentStatus');
+            }
+            else{
+                console.log('Employee is offline');
+                socket.emit('sv-sendEmployeeStatus', {
+                    online: false,
+                    employeeId: socketData.employeeId
+                });
+            }
+        });
+    })
+
+    socket.on('cl-myCurrentStatus', socketData =>{
+
+        SocketClient.findOne({socketId: socket.id})
+        .exec((err, socketClient) =>{
+            if (err) {
+                console.log(err)
+            }
+            if (socketClient) {
+                socketData.employeeId = socketClient.employeeId;
+                socketData.online = true;
+                console.log('Employee status successfully sent to admin');
+                io.emit('sv-sendEmployeeStatus', socketData);
+            }
+        });
+        
+    })
+    
     socket.on('cl-getInitNotif', () => {
         console.log(`Admin is requesting initial notifications\nSocketId: ${socket.id}`);
         EmployeeTimeIn.find({})
@@ -102,6 +190,8 @@ io.on('connection', (socket) => {
             io.emit('sv-sendInitNotif', employeeTimeIns);
         });
     });
+
+    
 
 
     socket.on('cl-timeIn', socketdata => {
@@ -166,9 +256,9 @@ io.on('connection', (socket) => {
         })        
     });
 
-    socket.on('cl-getNotifDetails', socketdata => {
+    socket.on('cl-getNotifDetails', socketData => {
         console.log('Admin requesting notification details')
-        EmployeeTimeIn.findByIdAndUpdate(socketdata.id, {
+        EmployeeTimeIn.findByIdAndUpdate(socketData.id, {
             isSeen: true,
             seenAt: Math.floor(Date.now() /1000)
         }, (err, employeeTimeIn) =>{
@@ -181,6 +271,17 @@ io.on('connection', (socket) => {
                 batteryStatus: employeeTimeIn.batteryStatus
             })
             console.log('Notification details succesfully sent to admin');
+            SocketClient.find({employeeId: employeeTimeIn.employee})
+            .exec((err, socketClients) => {
+                if (err) {
+                    console.log(err);
+                } else {
+                    socketClients.forEach(socketClient => {
+                        io.to(socketClient.socketId).emit('sv-notifSeen', {id: socketData.id});
+                    })
+                }
+            })
+
             //emit to client that his notification is seen by admin
         })
     });
@@ -192,32 +293,6 @@ io.on('connection', (socket) => {
             io.emit('sv-adminTyping');
         }
     })
-
-    socket.on('cl-join-room', function(roomId){
-        socket.join(roomId);
-    });
-    
-    socket.on('cl-sendmessage', socketdata => {
-        io.emit('sv-newmessagetoadmin', socketdata);
-    })
-
-    socket.on('cl-sendmessagetoemployee', socketdata => {
-        console.log(socketdata);
-        io.emit('sv-servenewmessagetoemployee', {
-            text: socketdata.txt,
-            time: socketdata.time
-        });
-    })
-
-    socket.on('cl-getinitlog', socketdata => {
-        unirest.get(`${DBHOST}/employeeTimeIn?employeeid=${socketdata.employeeid}&_limit=20&_sort=timeIn&_order=desc`)
-        .end(
-            response => {
-                // console.log(response.body);
-                    io.emit('sv-sendinitemployeelog', {logs: response.body});
-            }
-        );
-    });
 
     socket.on('cl-getInitMessages', socketData => {
         ///sort and limit the result
@@ -231,8 +306,6 @@ io.on('connection', (socket) => {
             })
         })
     });
-
-    // if admin set isMe = false, employee set isMe = true
     
 
     socket.on('cl-sendNewMessage', socketData => {
@@ -261,10 +334,6 @@ io.on('connection', (socket) => {
                 console.log(newMessage)
                 io.emit('sv-newMessageFromAdmin', newMessage)
             }
-            
-            //     content: socketData.content
-            // })
-            //if admin, emit to client new message
         })
     });
 
@@ -283,6 +352,7 @@ io.on('connection', (socket) => {
                         "_id": 1,
                         "employee": 1,
                         "map": 1,
+                        "pic": 1,
                         "employeeDetails._id": 1,
                         "employeeDetails.name": 1,
                         "employeeDetails.pic": 1,
@@ -295,6 +365,7 @@ io.on('connection', (socket) => {
                     "employee": {"$first": "$_id"},
                     "map": { "$first": "$map" },
                     "timeIn": {"$first": "$timeIn"},
+                    "pic": {"$first": "$pic"},
                     "employeeDetails": {"$first": "$employeeDetails"}
                 }}
             ])
@@ -320,13 +391,29 @@ io.on('connection', (socket) => {
 
 
     socket.on('disconnect', () => {
+        console.log('Client disconnected with ID: ' + socket.id)
 
-        console.log('Client disconnected with ID: ' + socket.id)});
+        SocketClient.findOne({socketId: socket.id})
+        .exec((err, socketClient) =>{
+            if (err) {
+                console.log(err);
+            }
+            if (socketClient) {
+                io.emit('sv-sendEmployeeStatus', {
+                    online: false,
+                    employeeId: socketClient.employeeId
+                });
+            }
+            
+            
+        });
+
+        SocketClient.find({ socketId:socket.id }).remove().exec();
+
+        
+        
+    });
+
+
+        
 });
-
-
-
-// You can solve it by two ways.
-
-// first and preferred one is @durrellchamorro answer. you ran the command ps aux | grep node and you will get the process id like 16750 or some other else, next you need to run kill -9 16750 it will kill the process.
-// 2.Next one is run the command killall -9 node it will kill all the processing running on node.
