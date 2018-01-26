@@ -71,7 +71,8 @@ const server = express()
     .use((req, res) => res.sendFile(INDEX))
     .listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
 const io = socketIO(server, {
-    pingTimeout: 1000
+    pingTimeout: 5000,
+    pingInterval: 5000
 });
 
 // const io = socketIO(server);
@@ -86,10 +87,13 @@ SocketClient.remove({}, function(err, row) {
 
 
 io.on('connection', (socket) => {
-
     console.log(`Client connected with ID: ${socket.id}`);
 
+    console.log('Admin requesting EmployeeId of new socket connection');
+    socket.emit('sv-requestEmployeeId');
+    
     socket.on('cl-sendEmployeeId', socketData => {
+        socket.join(socketData.employeeId);
         let newSocketClient = new SocketClient(
             {
                 socketId: socket.id,
@@ -102,6 +106,7 @@ io.on('connection', (socket) => {
                 console.log(err);
             } else {
                 console.log('New socket client added!');
+                io.to(newSocketClient.socketId).emit('sv-myCurrentStatus');
             }
             
         })
@@ -111,7 +116,7 @@ io.on('connection', (socket) => {
     socket.on('cl-getInitNotifEmployee', (socketData) => {
         console.log(`Employee is requesting initial notifications\nSocketId: ${socket.id}`);
         EmployeeTimeIn.find({employee: socketData.employeeId})
-        .limit(20)
+        .limit(100)
         .sort({timeIn: -1})
         .exec(function (err, employeeTimeIns) {
             if (err) {
@@ -170,7 +175,7 @@ io.on('connection', (socket) => {
                 path:'employee',
                 select: 'name  pic'
             })
-        .limit(20)
+        .limit(15)
         .sort({timeIn: -1})
         .exec(function (err, employeeTimeIns) {
             if (err) return handleError(err);
@@ -187,7 +192,35 @@ io.on('connection', (socket) => {
             } 
             
             console.log('Initial notifications succesfully sent to admin');
-            io.emit('sv-sendInitNotif', employeeTimeIns);
+            socket.emit('sv-sendInitNotif', employeeTimeIns);
+        });
+    });
+
+    socket.on('cl-getAdditionalNotif', socketData => {
+        console.log(`Admin is requesting additions notifications\nSocketId: ${socket.id}`);
+        EmployeeTimeIn.find({timeIn: {$lt: socketData.timeIn}})
+        .populate(
+            {
+                path:'employee',
+                select: 'name  pic'
+            })
+        .limit(10)
+        .sort({timeIn: -1})
+        .exec(function (err, employeeTimeIns) {
+            if (err) return handleError(err);
+            if (employeeTimeIns.length) {
+                employeeTimeIns = employeeTimeIns.map(timeIn => {
+                    return {
+                        id: timeIn.id,
+                        name: timeIn.employee.name,
+                        pic: timeIn.employee.pic.thumb,
+                        timeIn: timeIn.timeIn,
+                        isSeen: timeIn.isSeen
+                    }
+                })
+            }
+            console.log('Additional notifications succesfully sent to admin');
+            socket.emit('sv-sendAdditionNotif', employeeTimeIns);
         });
     });
 
@@ -205,7 +238,8 @@ io.on('connection', (socket) => {
                 console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
                 cloudinary.v2.uploader.upload(socketdata.pic,function(err, result) {
                     if (err) {
-                        console.log(err);
+                        console.log('error uploading')
+                        //console.log(err);
                     } else {
                         console.log(`Selfie of ${employee.name.firstName} ${employee.name.lastName} successfully uploaded`);
                         unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
@@ -225,6 +259,7 @@ io.on('connection', (socket) => {
                                         },
                                         batteryStatus: socketdata.batteryStatus
                                     });
+                                    console.log(socketdata.timeIn);
                         
                                     EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
                                         if (err) {
@@ -257,54 +292,93 @@ io.on('connection', (socket) => {
     });
 
     socket.on('cl-getNotifDetails', socketData => {
-        console.log('Admin requesting notification details')
-        EmployeeTimeIn.findByIdAndUpdate(socketData.id, {
-            isSeen: true,
-            seenAt: Math.floor(Date.now() /1000)
-        }, (err, employeeTimeIn) =>{
-            if (err) throw err;
-            io.emit('sv-serveNotifDetails', {
-                id: employeeTimeIn.id,
-                pic: employeeTimeIn.pic,
-                map: employeeTimeIn.map,
-                timeIn: employeeTimeIn.timeIn,
-                batteryStatus: employeeTimeIn.batteryStatus
-            })
-            console.log('Notification details succesfully sent to admin');
-            SocketClient.find({employeeId: employeeTimeIn.employee})
-            .exec((err, socketClients) => {
-                if (err) {
-                    console.log(err);
-                } else {
-                    socketClients.forEach(socketClient => {
-                        io.to(socketClient.socketId).emit('sv-notifSeen', {id: socketData.id});
-                    })
-                }
-            })
+        console.log('Admin requesting notification details');
 
-            //emit to client that his notification is seen by admin
+        EmployeeTimeIn.findById(socketData.id)
+        .exec((err, employeeTimeIn) => {
+            if(err) console.log(err);
+            if (employeeTimeIn) {
+                if (!employeeTimeIn.isSeen) {
+                    employeeTimeIn.isSeen = true,
+                    employeeTimeIn.seenAt = Math.floor(Date.now() /1000);
+                    employeeTimeIn.save();
+                    io.to(employeeTimeIn.employee).emit('sv-notifSeen', {id: socketData.id});
+                    console.log('Seen notification successfully sent to employee');
+                }
+
+                console.log('Notification details succesfully sent to admin');
+                socket.emit('sv-serveNotifDetails', {
+                    id: employeeTimeIn.id,
+                    pic: employeeTimeIn.pic,
+                    map: employeeTimeIn.map,
+                    timeIn: employeeTimeIn.timeIn,
+                    batteryStatus: employeeTimeIn.batteryStatus
+                })
+            }
         })
     });
 
     socket.on('cl-typing', socketData => {
-        if (socketData.isEmployee) {
-            io.emit('sv-employeeTyping');
+        if (socketData.employeeId) {
+            console.log('Admin typing');
+            io.to(socketData.employeeId).emit('sv-adminTyping');
         } else {
-            io.emit('sv-adminTyping');
+            SocketClient.findOne({socketId: socket.id})
+            .exec((err, socketClient) =>{
+                if (err) {
+                    console.log(err);
+                }
+                if (socketClient) {
+                    console.log('Employee typing');
+                    io.to(socketClient.employeeId).emit('sv-employeeTyping');
+                }
+            });
         }
+        
+        
     })
 
     socket.on('cl-getInitMessages', socketData => {
         ///sort and limit the result
-        console.log('Request initial message history of selected employee');
-        EmployeeTimeIn.findById(socketData.notificationId, (err, employeeTimeIn) =>{
-            if (err) throw err;
-            Employee.findById(employeeTimeIn.employee, (err, employee) =>{
-                if (err) throw err;
-                console.log('Initial message history for selected employee successfully sent');
-                io.emit('sv-sendInitMessages', employee);        
+        if (socketData.employeeId) {
+            console.log('Employee requesting initial nessages');
+            Employee.findById(socketData.employeeId, (err, employee) =>{
+                if (err) {
+                    console.log(err)
+                }
+                if (employee) {
+                    console.log('Initial message history for selected employee successfully sent');
+                    console.log(employee)
+                    socket.emit('sv-sendInitMessages', employee.messages);
+                } 
+                        
             })
-        })
+        } 
+        else {
+            console.log('Request initial message history of selected employee');
+            EmployeeTimeIn.findById(socketData.notificationId, (err, employeeTimeIn) =>{
+                if (err) console.log(err);
+
+                if (employeeTimeIn) {
+                    Employee.findById(employeeTimeIn.employee, (err, employee) =>{
+                        if(err) console.log(err);
+                        if (employee) {
+                            let _objKeys = Object.keys(socket.rooms);
+                            if(_objKeys.length > 2){
+                                for(let i = 1; i < _objKeys.length; i++){
+                                    socket.leave(_objKeys[i]);
+                                }
+                            }
+                            socket.join(employee._id);
+                            console.log('Initial message history for selected employee successfully sent');
+                            socket.emit('sv-sendInitMessages', employee);
+                        }
+                    })
+                } 
+                
+            })
+        }
+        
     });
     
 
@@ -320,20 +394,15 @@ io.on('connection', (socket) => {
         Employee.findByIdAndUpdate(socketData.employeeId, {
             $push: {'messages': newMessage}
         }, (err, employee) => {
-            if (err) throw err;
-            console.log('New message saved');
-            io.to(socket.id).emit('sv-messageSent', {success: true})
+            if(err) console.log(err);
 
-            if (socketData.isMe) {
-                newMessage.employeeId = socketData.employeeId;
-                io.emit('sv-newMessageFromEmployee', newMessage)
-                console.log(newMessage);
-
+            if(employee){
+                console.log('New message saved');
+                newMessage.secret = socketData.secret ? socketData.secret : (Math.floor(Date.now() /1000) + 'qwqwew');
+                io.to(socketData.employeeId).emit('sv-newMessage', newMessage);
             }
-            else{
-                console.log(newMessage)
-                io.emit('sv-newMessageFromAdmin', newMessage)
-            }
+            
+            
         })
     });
 
@@ -404,14 +473,9 @@ io.on('connection', (socket) => {
                     employeeId: socketClient.employeeId
                 });
             }
-            
-            
         });
 
         SocketClient.find({ socketId:socket.id }).remove().exec();
-
-        
-        
     });
 
 
