@@ -42,3 +42,35 @@ const EmployeeTimeIn = module.exports =  mongoose.model('EmployeeTimeIn', employ
 module.exports.addNew = (newEmployeeTimeIn, callback) => {
     newEmployeeTimeIn.save(callback);
 }
+
+
+
+
+
+
+// EmployeeTimeIn.find({employee: socketData.emplopyeeId})
+//         .populate(
+//             {
+//                 path:'employee',
+//                 select: 'name  pic'
+//             })
+//         .limit(1)
+//         .sort({timeIn: -1})
+//         .exec(function (err, employeeTimeIns) {
+//             if (err) console.log(err);
+//             if (employeeTimeIns.length) {
+//                 let employee = employeeTimeIns.map(timeIn => {
+//                     console.log(timeIn);
+//                     return {
+//                         id: timeIn.id,
+//                         name: timeIn.employee.name,
+//                         pic: timeIn.employee.pic,
+//                         timeIn: timeIn.timeIn,
+//                         isSeen: timeIn.isSeen
+//                     }
+//                 })
+//                 console.log('Details of employee successfully sent to admin');
+//                 //console.log(employeeTimeIns);
+//             }
+            
+//         });

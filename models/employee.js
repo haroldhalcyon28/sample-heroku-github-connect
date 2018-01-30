@@ -21,13 +21,14 @@ const employeeSchema = new Schema({
                 _id: false,
                 isMe:Boolean,
                 content: String,
-                sentAt: Number
+                sentAt: Number,
+                seenAt: {
+                    type: Number,
+                    default: 0
+                },
             }
         ],
-        createdAt: {
-            type: Number,
-            default: Math.floor(Date.now() /1000)
-        }
+        createdAt: Number
 });
 
 const Employee = module.exports =  mongoose.model('Employee', employeeSchema);
