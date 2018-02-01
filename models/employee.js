@@ -36,3 +36,7 @@ const Employee = module.exports =  mongoose.model('Employee', employeeSchema);
 module.exports.addNew = (newEmployee, callback) => {
     newEmployee.save(callback);
 }
+
+module.exports.adsda = () => {
+    console.log('fsdf');
+}

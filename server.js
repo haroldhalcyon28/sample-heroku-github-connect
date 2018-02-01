@@ -2,17 +2,18 @@
 
 'use strict';
 
-const express = require('express');
-const socketIO = require('socket.io');
+const app = require('express')();
+const server = require('http').Server(app);
+const io = require('socket.io')(server);
+
+
 const path = require('path');
 const unirest = require('unirest');
 const PORT = process.env.PORT || 8080;
 const INDEX = path.join(__dirname, 'index.html');
-const DBHOST = 'http://192.168.1.73:3000';
 const Employee = require('./models/employee');
 const EmployeeTimeIn = require('./models/employee-time-in');
 const SocketClient = require('./models/socket-client');
-
 
 
 
@@ -68,13 +69,24 @@ var DEBUG = (function () {
 
 
 
-const server = express()
-    .use((req, res) => res.sendFile(INDEX))
-    .listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
-const io = socketIO(server, {
-    pingTimeout: 5000,
-    pingInterval: 5000
+// const server = express()
+//     .use((req, res) => res.sendFile(INDEX))
+//     .listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
+// const io = socketIO(server, {
+//     pingTimeout: 5000,
+//     pingInterval: 5000
+// });
+
+server.listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
+
+app.get('/', function (req, res) {
+  res.send('sdsds');
 });
+
+app.get('/authenticate', function (req, res) {
+    res.send('authenticate');
+  });
+
 
 // const io = socketIO(server);
 
@@ -137,15 +149,17 @@ io.on('connection', (socket) => {
     })
 
     socket.on('cl-getEmployeeStatus', socketData => {
+        console.log(Object.keys(socket.rooms));
         console.log('Admin requesting details of employee');
         let _objKeys = Object.keys(socket.rooms);
         if(_objKeys.length > 2){
             for(let i = 1; i < _objKeys.length; i++){
                 if (_objKeys[i] == 'adminRoom') continue;
+                if(socketData.employeeId == _objKeys[i]) continue;
                 socket.leave(_objKeys[i]);
             }
         }
-        socket.join(socketData.emplopyeeId);
+        socket.join(socketData.employeeId);
 
         SocketClient.findOne({employeeId: socketData.employeeId})
         .exec((err, socketClient) =>{
@@ -178,7 +192,8 @@ io.on('connection', (socket) => {
                             }
                         })
                         console.log('Details of employee successfully sent to admin');
-                        socket.emit('sv-sendSelectedEmployeeStatus', employee[0]);
+                        io.to(socketData.employeeId).emit('sv-sendSelectedEmployeeStatus', employee[0]);
+                        
                     } 
                 });
             }
@@ -188,7 +203,6 @@ io.on('connection', (socket) => {
     
 
     socket.on('cl-myCurrentStatus', socketData => {
-
         SocketClient.findOne({socketId: socket.id})
         .exec((err, socketClient) =>{
             if (err) console.log(err);
@@ -205,7 +219,6 @@ io.on('connection', (socket) => {
                     if (err) console.log(err);
                     if (employeeTimeIns.length) {
                         let employee = employeeTimeIns.map(timeIn => {
-                            console.log(timeIn);
                             return {
                                 name: timeIn.employee.name,
                                 pic: timeIn.employee.pic,
@@ -214,14 +227,16 @@ io.on('connection', (socket) => {
                                 selfie: timeIn.pic
                             }
                         })
-     
                         let e = Object.assign({}, {id: socketClient.employeeId, isOnline: true,});
-                        if (socketData.connection) Object.assign(e, {currentLocation: socketData.location});
-                        io.to('adminRoom').emit('sv-sendEmployeeStatus', e);
+                        if (socketData.location) Object.assign(e, {currentLocation: socketData.location});
+                        console.log(socketData);
+                        //io.to('adminRoom').emit('sv-sendEmployeeStatus', e);
 
+                        if (socketData.battery) Object.assign(e, {battery: socketData.battery});
                         if (socketData.connection) Object.assign(e, {connectionType: socketData.connection});
                         if (socketData.phone) Object.assign(e, {phone: socketData.phone});
                         e = Object.assign({}, e, employee[0]);
+                        console.log(socketClient.employeeId);
                         io.to(socketClient.employeeId).emit('sv-sendSelectedEmployeeStatus', e);
                         console.log('Employee status successfully sent to admin');
                     } 
@@ -233,8 +248,6 @@ io.on('connection', (socket) => {
         
     })
 
-    //disconnection
-    //connection
     
     socket.on('cl-getInitNotif', () => {
         console.log(`Admin is requesting initial notifications\nSocketId: ${socket.id}`);
@@ -250,7 +263,6 @@ io.on('connection', (socket) => {
             if (err) return handleError(err);
             if (employeeTimeIns.length) {
                 employeeTimeIns = employeeTimeIns.map(timeIn => {
-                    console.log(timeIn);
                     return {
                         id: timeIn.id,
                         name: timeIn.employee.name,
@@ -419,7 +431,6 @@ io.on('connection', (socket) => {
                 if (err) console.log(err);
                 if (employee) {
                     console.log('Initial message history for selected employee successfully sent');
-                    console.log(employee);
                     socket.emit('sv-sendInitMessages', employee.messages);
                 } 
                         
@@ -440,10 +451,13 @@ io.on('connection', (socket) => {
                                 for(let i = 1; i < _objKeys.length; i++){
                                     
                                     if (_objKeys[i] == 'adminRoom') continue;
+                                    if (_objKeys[i] == employee._id) continue;
                                     socket.leave(_objKeys[i]);
                                 }
                             }
+
                             socket.join(employee._id);
+                            
                             Employee.aggregate([
                                 {"$match": {"_id": employeeTimeIn.employee}},
                                 {"$project": {
@@ -529,6 +543,8 @@ io.on('connection', (socket) => {
             if(employee){
                 console.log('New message saved');
                 newMessage.secret = socketData.secret ? socketData.secret : (Math.floor(Date.now() /1000) + 'qwqwew');
+                console.log(socketData.employeeId);
+                console.log(Object.keys(socket.rooms));
                 io.to(socketData.employeeId).emit('sv-newMessage', newMessage);
             }
             
@@ -613,10 +629,10 @@ io.on('connection', (socket) => {
                                 id: socketClient.employeeId
                             });
                         }
-                        SocketClient.find({ socketId:socket.id }).remove().exec();
                     }
                 });
             }
+            SocketClient.find({ socketId:socket.id }).remove().exec();
         });
 
     });
