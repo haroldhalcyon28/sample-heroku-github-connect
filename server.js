@@ -4,7 +4,10 @@
 
 const app = require('express')();
 const server = require('http').Server(app);
-const io = require('socket.io')(server);
+const io = require('socket.io')(server, {
+    pingInterval: 5000,
+    pingTimeout: 5000
+});
 
 
 const path = require('path');
@@ -624,15 +627,19 @@ io.on('connection', (socket) => {
                         console.log(`Socket count: ${socketClients.length}`);
                         console.log(socketClients);
                         if (socketClients.length == 1) {
-                            io.to('adminRoom').emit('sv-sendEmployeeStatus', {
+                            
+                            let d = Object.assign({}, {
                                 isOnline: false,
                                 id: socketClient.employeeId
-                            });
+                            })
+                            io.to(socketClient.employeeId).emit('sv-sendSelectedEmployeeStatus', d);
+                            io.to('adminRoom').emit('sv-sendEmployeeStatus', d);
                         }
                     }
                 });
+                SocketClient.find({ socketId:socket.id }).remove().exec();
             }
-            SocketClient.find({ socketId:socket.id }).remove().exec();
+            
         });
 
     });
