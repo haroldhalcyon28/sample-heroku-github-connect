@@ -83,7 +83,7 @@ var DEBUG = (function () {
 server.listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
 
 app.get('/', function (req, res) {
-  res.send('sdsds');
+  res.send('test');
 });
 
 app.get('/authenticate', function (req, res) {
