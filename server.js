@@ -18,12 +18,10 @@ const Employee = require('./models/employee');
 const EmployeeTimeIn = require('./models/employee-time-in');
 const SocketClient = require('./models/socket-client');
 
-
-
 const mongoose = require('mongoose');
 const ObjectId = require('mongodb').ObjectID;
-const database = require('./config/database');
-mongoose.connect(database.uri, { useMongoClient: true});
+const config = require('./config/config');
+mongoose.connect(config.database.uri, { useMongoClient: true});
 // On Connection
 mongoose.connection.on('connected', () => {console.log('Connected to Database ')});
 // On Error
@@ -82,13 +80,19 @@ var DEBUG = (function () {
 
 server.listen(PORT, () => DEBUG.log(`Listening on ${PORT}`));
 
-app.get('/', function (req, res) {
-  res.send('test');
-});
+const cors = require('cors');
+app.use(cors());
 
-app.get('/authenticate', function (req, res) {
-    res.send('authenticate');
-  });
+const bodyParser = require('body-parser');
+
+const passport = require('passport');
+app.use(bodyParser.json());
+app.use(passport.initialize());
+app.use(passport.session());
+require('./config/passport')(passport);
+
+const users = require('./routes/users');
+app.use('', users);
 
 
 // const io = socketIO(server);
@@ -102,41 +106,101 @@ SocketClient.remove({}, function(err, row) {
 })
 
 
-io.on('connection', (socket) => {
-    console.log(`Client connected with ID: ${socket.id}`);
 
-    console.log('Admin requesting EmployeeId of new socket connection');
-    socket.emit('sv-requestEmployeeId');
+const jwt = require('jsonwebtoken');
+const Account = require('./models/account');
+io.use((socket, next) => {
     
+    let token = socket.handshake.query.token;
+    jwt.verify(token, config.secret, (err, decodedToken) => {
+        if(err) return next(new Error('authentication error'));
+        if(decodedToken) {
+            let query = {
+                _id: ObjectId(decodedToken.data._id),
+                isAdmin: decodedToken.data.isAdmin
+            }
+            Account.getAccountByQuery(query, (err, account) => {
+                if(err) return next(new Error('authentication error'));
+                if(!account){
+                    return next(new Error('authentication error'));
+                }
+                else{
+                    socket.user = {
+                        _id: account._id,
+                        username: account.username,
+                        isAdmin: account.isAdmin,
+                        name: account.name
+                    };
+                    if(account.isAdmin){
+                        return next();
+                    }
+                    else{
+                        Employee.getEmployeeById(account._id, (err, employee) => {
+                            if (err) console.log(err);
+                            if (employee) {
+                                socket.user = Object.assign({}, socket.user, {
+                                    name: employee.name
+                                })
+                            }
+                            
+                            return next();
+                        })
+                    }
+                    
+                    
+                }
+            })
+        }
+    })
+});
+
+io.use((socket, next) => {
+    console.log(`
+        New socket client connected
+        Socket ID: ${socket.id}
+        ${socket.user.isAdmin ? 'Admin' : 'Employee'} ID: ${socket.user._id}
+        Username: ${socket.user.username}
+    `);
+    return next();
+})
+
+//   console.log(Object.keys(io.sockets.connected));
+  
+io.on('connection', (socket) => {
+    // socket.emit('sv-requestEmployeeId');
+    if(!socket.user.isAdmin) socket.join(socket.user._id);
+
     socket.on('cl-adminJoinRoom', () => {
         socket.join('adminRoom');
     })
 
 
-    socket.on('cl-sendEmployeeId', socketData => {
-        socket.join(socketData.employeeId);
-        let newSocketClient = new SocketClient(
-            {
-                socketId: socket.id,
-                employeeId: socketData.employeeId,
-            }
-        )
+    // socket.on('cl-sendEmployeeId', socketData => {
+    //     socket.join(socketData.employeeId);
+    //     let newSocketClient = new SocketClient(
+    //         {
+    //             socketId: socket.id,
+    //             employeeId: socketData.employeeId,
+    //         }
+    //     )
         
-        SocketClient.addNew(newSocketClient, (err, socketClient) => {
-            if (err) {
-                console.log(err);
-            } else {
-                console.log('New socket client added!');
-                io.to(newSocketClient.socketId).emit('sv-myCurrentStatus');
-            }
+    //     SocketClient.addNew(newSocketClient, (err, socketClient) => {
+    //         if (err) {
+    //             console.log(err);
+    //         } else {
+    //             console.log('New socket client added!');
+    //             io.to(newSocketClient.socketId).emit('sv-myCurrentStatus');
+    //         }
             
-        })
-    })
+    //     })
+    // })
 
     
-    socket.on('cl-getInitNotifEmployee', (socketData) => {
-        console.log(`Employee is requesting initial notifications\nSocketId: ${socket.id}`);
-        EmployeeTimeIn.find({employee: socketData.employeeId})
+    socket.on('cl-getInitNotifEmployee', () => {
+
+        console.log(`${socket.user.name.firstName} ${socket.user.name.lastName} is requesting initial notifications`)
+        //console.log(`Employee is requesting initial notifications\nSocketId: ${socket.id}`);
+        EmployeeTimeIn.find({employee: socket.user._id})
         .limit(100)
         .sort({timeIn: -1})
         .exec(function (err, employeeTimeIns) {
@@ -145,7 +209,8 @@ io.on('connection', (socket) => {
             }
             else{
                 socket.emit('sv-sendInitNotif', employeeTimeIns);
-                console.log('Initial notifications succesfully sent to employee');
+                console.log(employeeTimeIns);
+                console.log(`Initial notifications succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`);
             }
 
         });
@@ -283,6 +348,7 @@ io.on('connection', (socket) => {
             } 
             
             console.log('Initial notifications succesfully sent to admin');
+            
             socket.emit('sv-sendInitNotif', employeeTimeIns);
         });
     });
@@ -436,9 +502,9 @@ io.on('connection', (socket) => {
 
     socket.on('cl-getInitMessages', socketData => {
         ///sort and limit the result
-        if (socketData.employeeId) {
+        if (!socket.user.isAdmin) {
             console.log('Employee requesting initial nessages');
-            Employee.findById(socketData.employeeId, (err, employee) =>{
+            Employee.findById(socket.user._id, (err, employee) =>{
                 if (err) console.log(err);
                 if (employee) {
                     console.log('Initial message history for selected employee successfully sent');
@@ -539,14 +605,20 @@ io.on('connection', (socket) => {
 
     socket.on('cl-sendNewMessage', socketData => {
         console.log(socketData);
-        console.log(`${socketData.isMe ? 'Employee' : 'Admin'} sending new message`);
+        //console.log(socketData);
+        console.log(`
+            ${socket.user.isAdmin ? 'Admin' : 'Employee'} ${socket.user.name.firstName} ${socket.user.name.lastName} sending new message
+            Content: ${socketData.content}
+        `);
+
         let newMessage = {
-            isMe: socketData.isMe,
+            isMe: !socket.user.isAdmin,
             content: socketData.content,
             sentAt: Math.floor(Date.now() /1000)
         }
 
-        Employee.findByIdAndUpdate(socketData.employeeId, {
+        let employeeId = socket.user.isAdmin ? socketData.employeeId : socket.user._id;
+        Employee.findByIdAndUpdate(employeeId, {
             $push: {'messages': newMessage}
         }, (err, employee) => {
             if(err) console.log(err);
@@ -557,9 +629,9 @@ io.on('connection', (socket) => {
                 // console.log(socketData.employeeId);
                 // console.log(Object.keys(socket.rooms));
 
-                io.to(socketData.employeeId).emit('sv-newMessage', newMessage);
+                io.to(employeeId).emit('sv-newMessage', newMessage);
 
-                if(socketData.isMe) {
+                if(!socket.user.isAdmin) {
                     newMessage = Object.assign({}, newMessage, {
                         pic: employee.pic.thumb,
                         name: employee.name,
@@ -627,6 +699,17 @@ io.on('connection', (socket) => {
             
         })
 
+        
+    })
+
+    socket.on('cl-unseenLogsCount', () => {
+        EmployeeTimeIn.find({isSeen: false})
+        .exec((err, employeeTimeIns) => {
+            if (err) console.log(err);
+            if(employeeTimeIns){
+                socket.emit('sv-unseenLogsCount', employeeTimeIns.length);
+            }
+        })
         
     })
 
