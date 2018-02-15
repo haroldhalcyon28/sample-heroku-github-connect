@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+const Company = require('./company');
+const Employee = require('./employee');
+const ObjectId = require('mongodb').ObjectID;
 
 const employeeTimeInSchema = new Schema({
         employee: {
@@ -7,10 +10,13 @@ const employeeTimeInSchema = new Schema({
             ref: 'Employee'
         },
         timeIn: Number,
-        pic: {
-            original: String,
-            thumb: String
-        },
+        pics: [
+            {
+                original: String,
+                thumb: String
+            }
+        ],
+        scanDecoded: String,
         map: {
             lng: Number,
             lat: Number,
@@ -25,10 +31,7 @@ const employeeTimeInSchema = new Schema({
             type: Number,
             default: 0
         },
-        createdAt: {
-            type: Number,
-            default: Math.floor(Date.now() /1000)
-        }
+        createdAt: Number
 });
 
 const EmployeeTimeIn = module.exports =  mongoose.model('EmployeeTimeIn', employeeTimeInSchema);
@@ -37,34 +40,140 @@ module.exports.addNew = (newEmployeeTimeIn, callback) => {
     newEmployeeTimeIn.save(callback);
 }
 
+module.exports.getInitNotif = (company, callback) => {
 
+    
+    EmployeeTimeIn.aggregate(
+            [   { $lookup: {
+                        from: "employees",
+                        localField: "employee",
+                        foreignField: "_id",
+                        as: "employeeDetails"
+                    }
+                },
+                { $match: {"employeeDetails.company": ObjectId(company)}},
+                { 
+                    $project : { 
+                        _id: 1,
+                        employee: 1,
+                        "employeeDetails.name": 1,
+                        "employeeDetails.pic": 1,
+                        timeIn: 1,
+                        isSeen: 1
+                    } 
+                },
+                { $group: {
+                    _id: {
+                        id: "$_id",
+                        name: "$employeeDetails.name",
+                        pic: "$employeeDetails.pic",
+                        timeIn: "$timeIn",
+                        isSeen: "$isSeen",
+                        employeeId: "$employee"
+                    } 
+                }},
+                { $sort: {"_id.timeIn": -1 } },
+                { $limit: 15}                
+            ])
+        .exec(callback)
+}
 
+module.exports.getAdditionalNotif = (company, timeIn, callback) => {
 
+    EmployeeTimeIn.aggregate(
+        [   { $lookup: {
+                    from: "employees",
+                    localField: "employee",
+                    foreignField: "_id",
+                    as: "employeeDetails"
+                }
+            },
+            { $match: {
+                "employeeDetails.company": ObjectId(company),
+                timeIn: {$lt: timeIn}
+                }
+            },
+            { 
+                $project : { 
+                    _id: 1,
+                    employee: 1,
+                    "employeeDetails.name": 1,
+                    "employeeDetails.pic": 1,
+                    timeIn: 1,
+                    isSeen: 1
+                } 
+            },
+            { $group: {
+                _id: {
+                    id: "$_id",
+                    name: "$employeeDetails.name",
+                    pic: "$employeeDetails.pic",
+                    timeIn: "$timeIn",
+                    isSeen: "$isSeen",
+                    employeeId: "$employee"
+                } 
+            }},
+            { $sort: {"_id.timeIn": -1 } },
+            { $limit: 10}                
+        ])
+    .exec(callback)
+}
 
+module.exports.getRecentTimeIns = (company, callback) => {
+    EmployeeTimeIn.aggregate(
+            [   { $lookup: {
+                        from: "employees",
+                        localField: "employee",
+                        foreignField: "_id",
+                        as: "employeeDetails"
+                    }
+                },
+                { $match: {"employeeDetails.company": ObjectId(company)}},
+                { 
+                    $project : { 
+                        employee: 1,
+                        map: 1,
+                        "employeeDetails._id": 1,
+                        "employeeDetails.name": 1,
+                        "employeeDetails.pic": 1,
+                        timeIn: 1
+                    } 
+                },
+                { $sort: {timeIn: -1 } },
+                { $group: {
+                    _id: "$employee",
+                    map: {$first: "$map" },
+                    employeeDetails: {$first: "$employeeDetails"}
+                }}
+            ])
+        .exec(callback)
 
-// EmployeeTimeIn.find({employee: socketData.emplopyeeId})
-//         .populate(
-//             {
-//                 path:'employee',
-//                 select: 'name  pic'
-//             })
-//         .limit(1)
-//         .sort({timeIn: -1})
-//         .exec(function (err, employeeTimeIns) {
-//             if (err) console.log(err);
-//             if (employeeTimeIns.length) {
-//                 let employee = employeeTimeIns.map(timeIn => {
-//                     console.log(timeIn);
-//                     return {
-//                         id: timeIn.id,
-//                         name: timeIn.employee.name,
-//                         pic: timeIn.employee.pic,
-//                         timeIn: timeIn.timeIn,
-//                         isSeen: timeIn.isSeen
-//                     }
-//                 })
-//                 console.log('Details of employee successfully sent to admin');
-//                 //console.log(employeeTimeIns);
-//             }
-            
-//         });
+        // id: employeeTimeIn._id,
+        //                 name: employeeTimeIn.employeeDetails[0].name,
+        //                 pic: employeeTimeIn.employeeDetails[0].pic,
+        //                 isOnline: false,
+        //                 currentLocation: employeeTimeIn.map,
+}
+
+module.exports.getUnseenLogsCount = (company, callback) => {
+    EmployeeTimeIn.aggregate(
+        [   { "$lookup": {
+                    "from": "employees",
+                    "localField": "employee",
+                    "foreignField": "_id",
+                    "as": "employeeDetails"
+                }
+            },
+            { "$match": {
+                "employeeDetails.company": ObjectId(company),
+                "isSeen": false
+                }
+            },
+            { 
+                "$project" : { 
+                    "_id": 1
+                } 
+            }              
+        ])
+    .exec(callback)
+}

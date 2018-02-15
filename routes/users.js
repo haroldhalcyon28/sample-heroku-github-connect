@@ -10,31 +10,31 @@ const Employee = require('../models/employee');
 
 
 
-router.get('/', function (req, res) {
-        let newAccount = new Account(
-        {
-            username: 'admin',
-            password: 'admin',
-            name: {
-                firstName: 'Bryan',
-                lastName: 'Adams',
-                middleName: ''
-            },
-            pic: {
-                original: 'http://res.rankedgaming.com/resources/images/profile/default-avatar-male.png',
-                thumb: 'http://res.rankedgaming.com/resources/images/profile/default-avatar-male.png'
-            },
-            isAdmin: true
-        }
-    )
-    Account.addNew(newAccount, (err, account) => {
-        if (err) throw err;
-        console.log(account);
-    })
+// router.get('/', function (req, res) {
+//         let newAccount = new Account(
+//         {
+//             username: 'admin',
+//             password: 'admin',
+//             name: {
+//                 firstName: 'Bryan',
+//                 lastName: 'Adams',
+//                 middleName: ''
+//             },
+//             pic: {
+//                 original: 'http://res.rankedgaming.com/resources/images/profile/default-avatar-male.png',
+//                 thumb: 'http://res.rankedgaming.com/resources/images/profile/default-avatar-male.png'
+//             },
+//             isAdmin: true
+//         }
+//     )
+//     Account.addNew(newAccount, (err, account) => {
+//         if (err) throw err;
+//         console.log(account);
+//     })
 
 
-    res.json({ a: 1 });
-});
+//     res.json({ a: 1 });
+// });
 
 
 router.post('/', function (req, res) {
@@ -91,6 +91,7 @@ router.post('/check-authentication', passport.authenticate('jwt', {session:false
             if(err) console.log(err);
             if(employee){
                 user = Object.assign({}, {
+                    _id: employee._id,
                     name: employee.name,
                     pic: employee.pic
                 });

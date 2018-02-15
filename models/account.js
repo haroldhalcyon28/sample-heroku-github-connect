@@ -11,7 +11,6 @@ const accountSchema = new Schema({
     name: {
         firstName: String,
         lastName: String,
-        middleName: String
     },
     pic: {
         original: String,

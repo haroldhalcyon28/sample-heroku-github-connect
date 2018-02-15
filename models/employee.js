@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const ObjectId = require('mongodb').ObjectID;
+const Account = require('./account');
+
+const config = require('../config/config');
+const cloudinary = config.cloudinary;
+
+const Util = require('../util/util');
 
 // mongodb collection name is case sensitive (‘Campaigns’ is different from ‘campaigns’)
 // mongodb best practises is to have all lower case for collection name (‘campaigns’ is preferred)
@@ -15,8 +21,7 @@ const employeeSchema = new Schema({
         },
         name: {
             firstName: String,
-            lastName: String,
-            middleName: String
+            lastName: String
         },
         pic: {
             original: String,
@@ -39,12 +44,69 @@ const employeeSchema = new Schema({
 
 const Employee = module.exports =  mongoose.model('Employee', employeeSchema);
 
-module.exports.addNew = (newEmployee, callback) => {
-    newEmployee.save(callback);
+module.exports.addNew = (_newEmployee, callback) => {
+    let newAccount = new Account({
+        username: _newEmployee.username,
+        password: _newEmployee.password
+    })
+ 
+    Account.addNew(newAccount, (err, account) => {
+        if(err) throw err;
+        if(account){
+            let newEmployee = new Employee({
+                _id: account._id,
+                company: _newEmployee.company,
+                name: _newEmployee.name,
+                pic: {
+                    original: '',
+                    thumb: ''
+                },
+                messages: [],
+                createdAt: Math.floor(Date.now() /1000)
+            })
+
+            if (_newEmployee.pic.original){
+                Util.upload(_newEmployee.pic.original, (err, result) => {
+                    if (err) { 
+                        Account.findByIdAndRemove(account._id);
+                        throw err;
+                    }
+                    if(result) {
+                        newEmployee.pic = {
+                            original: result.secure_url,
+                            thumb: result.secure_url
+                        }
+                        newEmployee.save(callback);
+                    }
+                })
+                // cloudinary.v2.uploader.upload(_newEmployee.pic.original,function(err, result) {
+                //     if (err) {
+                //         console.log('error uploading');
+                //         Account.findByIdAndRemove(account._id);
+                //     }
+                //     if(result) {
+                //         newEmployee.pic = {
+                //             original: result.secure_url,
+                //             thumb: result.secure_url
+                //         }
+                //         newEmployee.save(callback);
+                //     } 
+                // });
+            }
+            else{
+                newEmployee.save(callback);
+            }
+            
+            
+
+            
+            
+        }
+    })
 }
 
-module.exports.adsda = () => {
-    console.log('fsdf');
+module.exports.getAll = (company, callback) => {
+    Employee.find({company: company}, callback);
 }
 
 module.exports.getEmployeeById  = (id, callback) => {

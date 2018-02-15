@@ -21,39 +21,14 @@ const SocketClient = require('./models/socket-client');
 const mongoose = require('mongoose');
 const ObjectId = require('mongodb').ObjectID;
 const config = require('./config/config');
+const cloudinary = config.cloudinary;
+const Util = require('./util/util');
+
 mongoose.connect(config.database.uri, { useMongoClient: true});
 // On Connection
 mongoose.connection.on('connected', () => {console.log('Connected to Database ')});
 // On Error
 mongoose.connection.on('error', (err) => {console.log('Database error '+err)});
-
-// let newEmployee = new Employee(
-//     {
-//         name: {
-//             firstName: 'Jes',
-//             lastName: 'Paz',
-//             middleName: ''
-//         },
-//         pic: {
-//             original: 'https://trello-avatars.s3.amazonaws.com/86b9d2dcf35b7a7ca6525b1208401649/original.png',
-//             thumb: 'https://trello-avatars.s3.amazonaws.com/86b9d2dcf35b7a7ca6525b1208401649/50.png'
-//         },
-//         messages: []
-//     }
-// )
-// Employee.addNew(newEmployee, (err, employee) => {
-//     if (err) throw err;
-//     console.log(employee);
-// })
-
-// return;
-
-const cloudinary = require('cloudinary');
-cloudinary.config({ 
-    cloud_name: 'dka3vzadb', 
-    api_key: '259354488977965', 
-    api_secret: 'zO8KRwUwA1A-zINxpKrkRO-CINs' 
-  });
 
 
 // for changing console to debug and for adding log time
@@ -139,7 +114,8 @@ io.use((socket, next) => {
                             if (err) console.log(err);
                             if (employee) {
                                 socket.user = Object.assign({}, socket.user, {
-                                    name: employee.name
+                                    name: employee.name,
+                                    company: employee.company
                                 })
                             }
                             
@@ -167,77 +143,66 @@ io.use((socket, next) => {
 //   console.log(Object.keys(io.sockets.connected));
   
 io.on('connection', (socket) => {
-    // socket.emit('sv-requestEmployeeId');
-    if(!socket.user.isAdmin) socket.join(socket.user._id);
+    if(!socket.user.isAdmin) {
+        socket.join(socket.user._id);
+    }
 
-    socket.on('cl-adminJoinRoom', () => {
-        socket.join('adminRoom');
+    // ok
+    socket.on('cl-adminJoinRooms', socketData => {
+        for(let room of socketData.rooms){
+            socket.join(room);
+        }        
     })
 
+    // ok
+    socket.on('cl-adminLeaveRooms', () => {
+        let _objKeys = Object.keys(socket.rooms);
+        for(let i = 1; i < _objKeys.length; i++){
+            socket.leave(_objKeys[i]);
+        }       
+    })
 
-    // socket.on('cl-sendEmployeeId', socketData => {
-    //     socket.join(socketData.employeeId);
-    //     let newSocketClient = new SocketClient(
-    //         {
-    //             socketId: socket.id,
-    //             employeeId: socketData.employeeId,
-    //         }
-    //     )
-        
-    //     SocketClient.addNew(newSocketClient, (err, socketClient) => {
-    //         if (err) {
-    //             console.log(err);
-    //         } else {
-    //             console.log('New socket client added!');
-    //             io.to(newSocketClient.socketId).emit('sv-myCurrentStatus');
-    //         }
-            
-    //     })
-    // })
+    // ok
+    socket.on('cl-adminLeaveOneRoom', socketData => {
+        socket.leave(socketData.room);
+    })
 
-    
+    // ok
+    socket.on('cl-adminLeaveAndJoinRoom', socketData => {
+        socket.leave(socketData.roomLeave);
+        socket.join(socketData.roomJoin);
+    })
+
+    // ok
     socket.on('cl-getInitNotifEmployee', () => {
+        console.log(`
+            ${socket.user.name.firstName} ${socket.user.name.lastName} is requesting initial notifications
+        `);
 
-        console.log(`${socket.user.name.firstName} ${socket.user.name.lastName} is requesting initial notifications`)
-        //console.log(`Employee is requesting initial notifications\nSocketId: ${socket.id}`);
         EmployeeTimeIn.find({employee: socket.user._id})
         .limit(100)
         .sort({timeIn: -1})
         .exec(function (err, employeeTimeIns) {
-            if (err) {
-                console.log(err);
-            }
+            if (err) throw err;
             else{
                 socket.emit('sv-sendInitNotif', employeeTimeIns);
-                console.log(employeeTimeIns);
-                console.log(`Initial notifications succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`);
+                console.log(`
+                    ${employeeTimeIns.length} initial notifications succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}
+                `);
             }
 
         });
     })
 
+    // ok
     socket.on('cl-getEmployeeStatus', socketData => {
-        console.log(Object.keys(socket.rooms));
         console.log('Admin requesting details of employee');
-        let _objKeys = Object.keys(socket.rooms);
-        if(_objKeys.length > 2){
-            for(let i = 1; i < _objKeys.length; i++){
-                if (_objKeys[i] == 'adminRoom') continue;
-                if(socketData.employeeId == _objKeys[i]) continue;
-                socket.leave(_objKeys[i]);
-            }
+        let isOnline = getClientsInRoom(io.sockets, socketData.employeeId);
+        if(isOnline){
+            io.to(socketData.employeeId).emit('sv-myCurrentStatus');
         }
-        socket.join(socketData.employeeId);
-
-        SocketClient.findOne({employeeId: socketData.employeeId})
-        .exec((err, socketClient) =>{
-            if (err) console.log(err);
-            if (socketClient) {
-                console.log('Admin requesting status of selected employee');
-                io.to(socketClient.socketId).emit('sv-myCurrentStatus');
-            }
-            else{
-                console.log('Employee is offline');
+        else{
+            console.log('Employee is offline');
                 EmployeeTimeIn.find({employee: socketData.employeeId})
                 .populate(
                     {
@@ -252,207 +217,448 @@ io.on('connection', (socket) => {
                     if (employeeTimeIns.length) {
                         let employee = employeeTimeIns.map(timeIn => {
                             return {
+                                employeeId: socketData.employeeId,
                                 name: timeIn.employee.name,
                                 pic: timeIn.employee.pic,
                                 previousLocation: timeIn.map,
                                 isOnline: false,
-                                selfie: timeIn.pic
+                                selfies: timeIn.pics
                             }
                         })
                         console.log('Details of employee successfully sent to admin');
-                        io.to(socketData.employeeId).emit('sv-sendSelectedEmployeeStatus', employee[0]);
-                        io.to('adminRoom').emit('sv-sendEmployeeStatus', {
-                            isOnline: true,
+
+                        socket.emit('sv-sendSelectedEmployeeStatus', employee[0]);
+                        socket.emit('sv-sendEmployeeStatus', {
+                            isOnline: false,
                             id: socketData.employeeId
                         });
                         
                     } 
                 });
-            }
-        });
+        }
+        
+        // let _objKeys = Object.keys(socket.rooms);
+        // if(_objKeys.length > 2){
+        //     for(let i = 1; i < _objKeys.length; i++){
+        //         if (_objKeys[i] == 'adminRoom') continue;
+        //         if(socketData.employeeId == _objKeys[i]) continue;
+        //         socket.leave(_objKeys[i]);
+        //     }
+        // } // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
+        //             if (err) { 
+        //                 Account.findByIdAndRemove(account._id);
+        //                 throw err;
+        //             }
+        //             if(results.length) {
+        //                 newEmployee.pic = {
+        //                     original: results[0].original,
+        //                     thumb: results[0].thumb
+        //                 }
+        //                 console.log(results);
+        //                 newEmployee.save(callback);
+        //             }
+        //         }) // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
+        //             if (err) { 
+        //                 Account.findByIdAndRemove(account._id);
+        //                 throw err;
+        //             }
+        //             if(results.length) {
+        //                 newEmployee.pic = {
+        //                     original: results[0].original,
+        //                     thumb: results[0].thumb
+        //                 }
+        //                 console.log(results);
+        //                 newEmployee.save(callback);
+        //             }
+        //         }) // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
+        //             if (err) { 
+        //                 Account.findByIdAndRemove(account._id);
+        //                 throw err;
+        //             }
+        //             if(results.length) {
+        //                 newEmployee.pic = {
+        //                     original: results[0].original,
+        //                     thumb: results[0].thumb
+        //                 }
+        //                 console.log(results);
+        //                 newEmployee.save(callback);
+        //             }
+        //         })
+        // socket.join(socketData.employeeId);
+
+        // SocketClient.findOne({employeeId: socketData.employeeId})
+        // .exec((err, socketClient) =>{
+        //     if (err) console.log(err);
+        //     if (socketClient) {
+        //         console.log('Admin requesting status of selected employee');
+        //         io.to(socketClient.socketId).emit('sv-myCurrentStatus');
+        //     }
+        //     else{
+        //         console.log('Employee is offline');
+        //         EmployeeTimeIn.find({employee: socketData.employeeId})
+        //         .populate( // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
+        //             if (err) { 
+        //                 Account.findByIdAndRemove(account._id);
+        //                 throw err;
+        //             }
+        //             if(results.length) {
+        //                 newEmployee.pic = {
+        //                     original: results[0].original,
+        //                     thumb: results[0].thumb
+        //                 }
+        //                 console.log(results);
+        //                 newEmployee.save(callback);
+        //             }
+        //         })
+        //             {
+        //                 path:'employee',
+        //                 select: 'name  pic'
+        //             })
+        //         .limit(1)
+        //         .sort({timeIn: -1})
+        //         .exec(function (err, employeeTimeIns) {
+        //             if (err) console.log(err);
+
+        //             if (employeeTimeIns.length) {
+        //                 let employee = employeeTimeIns.map(timeIn => {
+        //                     return {
+        //                         name: timeIn.employee.name,
+        //                         pic: timeIn.employee.pic,
+        //                         previousLocation: timeIn.map,
+        //                         isOnline: false,
+        //                         selfie: timeIn.pic
+        //                     }
+        //                 })
+        //                 console.log('Details of employee successfully sent to admin');
+        //                 io.to(socketData.employeeId).emit('sv-sendSelectedEmployeeStatus', employee[0]);
+        //                 io.to('adminRoom').emit('sv-sendEmployeeStatus', {
+        //                     isOnline: true,
+        //                     id: socketData.employeeId
+        //                 });
+                        
+        //             } 
+        //         });
+        //     }
+        // });
     })
 
-    
-
+    // ok
     socket.on('cl-myCurrentStatus', socketData => {
-        SocketClient.findOne({socketId: socket.id})
-        .exec((err, socketClient) =>{
+        EmployeeTimeIn.find({employee: socket.user._id})
+        .populate(
+            {
+                path:'employee',
+                select: 'name  pic'
+            })
+        .limit(1)
+        .sort({timeIn: -1})
+        .exec(function (err, employeeTimeIns) {
             if (err) console.log(err);
-            if (socketClient) {
-                EmployeeTimeIn.find({employee: socketClient.employeeId})
-                .populate(
-                    {
-                        path:'employee',
-                        select: 'name  pic'
-                    })
-                .limit(1)
-                .sort({timeIn: -1})
-                .exec(function (err, employeeTimeIns) {
-                    if (err) console.log(err);
-                    if (employeeTimeIns.length) {
-                        let employee = employeeTimeIns.map(timeIn => {
-                            return {
-                                name: timeIn.employee.name,
-                                pic: timeIn.employee.pic,
-                                previousLocation: timeIn.map,
-                                isOnline: true,
-                                selfie: timeIn.pic
-                            }
-                        })
-                        let e = Object.assign({}, {id: socketClient.employeeId, isOnline: true,});
-                        if (socketData.location) Object.assign(e, {currentLocation: socketData.location});
-                        console.log(socketData);
-                        io.to('adminRoom').emit('sv-sendEmployeeStatus', e);
+            if (employeeTimeIns.length) {
+                let employee = employeeTimeIns.map(timeIn => {
+                    return {
+                        employeeId: socket.user._id,
+                        name: timeIn.employee.name,
+                        pic: timeIn.employee.pic,
+                        previousLocation: timeIn.map,
+                        isOnline: true,
+                        selfies: timeIn.pics
+                    }
+                })
+                let e = Object.assign({}, {id: socket.user._id, isOnline: true,});
+                if (socketData.location) Object.assign(e, {currentLocation: socketData.location});
+                io.to(socket.user.company).emit('sv-sendEmployeeStatus', e);
 
-                        if (socketData.battery) Object.assign(e, {battery: socketData.battery});
-                        if (socketData.connection) Object.assign(e, {connectionType: socketData.connection});
-                        if (socketData.phone) Object.assign(e, {phone: socketData.phone});
-                        e = Object.assign({}, e, employee[0]);
-                        console.log(socketClient.employeeId);
-                        io.to(socketClient.employeeId).emit('sv-sendSelectedEmployeeStatus', e);
-                        console.log('Employee status successfully sent to admin');
-                    } 
-                });
+                if (socketData.battery) Object.assign(e, {battery: socketData.battery});
+                if (socketData.connection) Object.assign(e, {connectionType: socketData.connection});
+                if (socketData.phone) Object.assign(e, {phone: socketData.phone});
+                e = Object.assign({}, e, employee[0]);
+                io.to(socket.user._id).emit('sv-sendSelectedEmployeeStatus', e);
+                console.log('Employee status successfully sent to admin');
+            } 
+        });
+        // SocketClient.findOne({socketId: socket.id})
+        // .exec((err, socketClient) =>{
+        //     if (err) console.log(err);
+        //     if (socketClient) {
+        //         EmployeeTimeIn.find({employee: socket.user._id})
+        //         .populate(
+        //             {
+        //                 path:'employee',
+        //                 select: 'name  pic'
+        //             })
+        //         .limit(1)
+        //         .sort({timeIn: -1})
+        //         .exec(function (err, employeeTimeIns) {
+        //             if (err) console.log(err);
+        //             if (employeeTimeIns.length) {
+        //                 let employee = employeeTimeIns.map(timeIn => {
+        //                     return {
+        //                         name: timeIn.employee.name,
+        //                         pic: timeIn.employee.pic,
+        //                         previousLocation: timeIn.map,
+        //                         isOnline: true,
+        //                         selfie: timeIn.pic
+        //                     }
+        //                 })
+        //                 let e = Object.assign({}, {id: socketClient.employeeId, isOnline: true,});
+        //                 if (socketData.location) Object.assign(e, {currentLocation: socketData.location});
+        //                 console.log(socketData);
+        //                 io.to('adminRoom').emit('sv-sendEmployeeStatus', e);
+
+        //                 if (socketData.battery) Object.assign(e, {battery: socketData.battery});
+        //                 if (socketData.connection) Object.assign(e, {connectionType: socketData.connection});
+        //                 if (socketData.phone) Object.assign(e, {phone: socketData.phone});
+        //                 e = Object.assign({}, e, employee[0]);
+        //                 console.log(socketClient.employeeId);
+        //                 io.to(socket.user._id).emit('sv-sendSelectedEmployeeStatus', e);
+        //                 console.log('Employee status successfully sent to admin');
+        //             } 
+        //         });
 
                 
-            }
-        });
+        //     }
+        // });
         
     })
 
-    
-    socket.on('cl-getInitNotif', () => {
-        console.log(`Admin is requesting initial notifications\nSocketId: ${socket.id}`);
-        EmployeeTimeIn.find({})
-        .populate(
-            {
-                path:'employee',
-                select: 'name  pic'
-            })
-        .limit(15)
-        .sort({timeIn: -1})
-        .exec(function (err, employeeTimeIns) {
-            if (err) return handleError(err);
-            if (employeeTimeIns.length) {
-                employeeTimeIns = employeeTimeIns.map(timeIn => {
-                    return {
-                        id: timeIn.id,
-                        name: timeIn.employee.name,
-                        pic: timeIn.employee.pic.thumb,
-                        timeIn: timeIn.timeIn,
-                        isSeen: timeIn.isSeen,
-                        employeeId: timeIn.employee.id
+    // ok
+    socket.on('cl-getInitNotif', socketData => {
+        console.log(`
+            Admin ${socket.user.name.firstName} ${socket.user.name.lastName} requesting initial notifications
+        `);
 
+        EmployeeTimeIn.getInitNotif(socketData.company, (err, employeeTimeIns) => {
+
+            if(err) console.log(err);
+            else{
+                employeeTimeIns = employeeTimeIns.map(employeeTimeIn => {
+                    employeeTimeIn = employeeTimeIn._id;
+                    return {
+                        id: employeeTimeIn.id,
+                        name: employeeTimeIn.name[0],
+                        pic: employeeTimeIn.pic[0].thumb,
+                        timeIn: employeeTimeIn.timeIn,
+                        isSeen: employeeTimeIn.isSeen,
+                        employeeId: employeeTimeIn.employeeId
                     }
                 })
-            } 
-            
-            console.log('Initial notifications succesfully sent to admin');
-            
-            socket.emit('sv-sendInitNotif', employeeTimeIns);
-        });
+
+                console.log('Initial notifications succesfully sent to admin');
+                socket.emit('sv-sendInitNotif', employeeTimeIns);
+            }
+        })
     });
 
+    // ok
     socket.on('cl-getAdditionalNotif', socketData => {
         console.log(`Admin is requesting additions notifications\nSocketId: ${socket.id}`);
-        EmployeeTimeIn.find({timeIn: {$lt: socketData.timeIn}})
-        .populate(
-            {
-                path:'employee',
-                select: 'name  pic'
-            })
-        .limit(10)
-        .sort({timeIn: -1})
-        .exec(function (err, employeeTimeIns) {
-            if (err) return handleError(err);
-            if (employeeTimeIns.length) {
-                employeeTimeIns = employeeTimeIns.map(timeIn => {
+        EmployeeTimeIn.getAdditionalNotif(socketData.company, socketData.timeIn, (err, employeeTimeIns) => {
+            if(err) console.log(err);
+            else{
+                employeeTimeIns = employeeTimeIns.map(employeeTimeIn => {
+                    employeeTimeIn = employeeTimeIn._id;
                     return {
-                        id: timeIn.id,
-                        name: timeIn.employee.name,
-                        pic: timeIn.employee.pic.thumb,
-                        timeIn: timeIn.timeIn,
-                        isSeen: timeIn.isSeen,
-                        employeeId: timeIn.employee.id
+                        id: employeeTimeIn.id,
+                        name: employeeTimeIn.name[0],
+                        pic: employeeTimeIn.pic[0].thumb,
+                        timeIn: employeeTimeIn.timeIn,
+                        isSeen: employeeTimeIn.isSeen,
+                        employeeId: employeeTimeIn.employeeId
                     }
                 })
+                console.log('Additional notifications succesfully sent to admin');
+                socket.emit('sv-sendAdditionNotif', employeeTimeIns);
             }
-            console.log('Additional notifications succesfully sent to admin');
-            socket.emit('sv-sendAdditionNotif', employeeTimeIns);
-        });
+        })
     });
 
-    
-
-
+    // ok
     socket.on('cl-timeIn', socketdata => {
-        Employee.findById(socketdata.employeeId, (err, employee) => {
-            let success = false;
-            if (err) {
-                console.log(err);
-            } else if (!employee) {
-                console.log(`_id ${socketdata.employeeId} not found`);
-            } else {
-                console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
-                cloudinary.v2.uploader.upload(socketdata.pic,function(err, result) {
-                    if (err) {
-                        console.log('error uploading')
-                        //console.log(err);
-                    } else {
-                        console.log(`Selfie of ${employee.name.firstName} ${employee.name.lastName} successfully uploaded`);
+        Util.uploadMultiple(socketdata.pics, (err, uploadedImages) => {
+                    if (err) throw err;
+                    if(uploadedImages.length) {
+                        console.log(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
                         unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
                             .end(
                                 response => {
+                                    let formattedAddress = response.body.results[0].formatted_address;
                                     let employeeTimeIn = new EmployeeTimeIn({
-                                        employee: socketdata.employeeId,
+                                        employee: socket.user._id,
                                         timeIn: socketdata.timeIn,
-                                        pic: {
-                                            original: result.secure_url,
-                                            thumb: result.secure_url
-                                        },
+                                        pics: uploadedImages,
+                                        scanDecoded: socketdata.scanResult,
                                         map: {
                                             lng: socketdata.map.lng,
                                             lat: socketdata.map.lat,
-                                            formattedAddress: response.body.results[0].formatted_address
+                                            formattedAddress: formattedAddress
                                         },
-                                        batteryStatus: socketdata.batteryStatus
+                                        batteryStatus: socketdata.batteryStatus,
+                                        createdAt: Math.floor(Date.now() /1000)
                                     });
-                                    console.log(socketdata.timeIn);
                         
                                     EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
                                         if (err) console.log(err);
-                                        if(employeeTimeIn){
-                                            console.log(`Time In of ${employee.name.firstName} ${employee.name.lastName} successfully saved\n`);
-                                            io.to(socket.id).emit('sv-successTimeIn', {
-                                                id: employeeTimeIn._id,
+                                        if(timeIn){
+                                            console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
+                                            socket.emit('sv-successTimeIn', {
+                                                id: timeIn._id,
                                                 timeIn: socketdata.timeIn,
-                                                formattedAddress: response.body.results[0].formatted_address
+                                                formattedAddress: formattedAddress
                                             });
-                                            console.log(`Response confirmation of time in succesfully sent to ${employee.name.firstName} ${employee.name.lastName}`)
+                                            console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
 
-                                            io.emit('sv-newNotification', {
-                                                id: employeeTimeIn.id,
-                                                isSeen: false,
-                                                name: {
-                                                    firstName: employee.name.firstName,
-                                                    middleName: employee.name.middleName, 
-                                                    lastName: employee.name.lastName,
-                                                },
-                                                pic: employee.pic.thumb,
-                                                timeIn: employeeTimeIn.timeIn
-                                            });
+                                            Employee.getEmployeeById(socket.user._id, (err, employee) => {
+                                                if (err) console.log(err)
+                                                if (employee) {
+                                                    io.to(socket.user.company).emit('sv-newNotification', {
+                                                        id: employeeTimeIn.id,
+                                                        isSeen: false,
+                                                        name: {
+                                                            firstName: employee.name.firstName,
+                                                            lastName: employee.name.lastName,
+                                                        },
+                                                        pic: employee.pic.thumb,
+                                                        timeIn: employeeTimeIn.timeIn
+                                                });
+                                                }
+                                            })
+                                            
                                         }
-                                        
-                                        
+
                                     });
                                 }
-                            );                                        
-                    } 
-                });
-            }
-        })        
+                            );
+                    }
+                })
+        // cloudinary.v2.uploader.upload(socketdata.pic[0],function(err, result) {
+        //     if (err) {
+        //         console.log('error uploading')
+        //         //console.log(err);
+        //     } else {
+        //         console.log(`Selfie of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
+        //         unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
+        //             .end(
+        //                 response => {
+        //                     let formattedAddress = response.body.results[0].formatted_address;
+        //                     let employeeTimeIn = new EmployeeTimeIn({
+        //                         employee: socket.user._id,
+        //                         timeIn: socketdata.timeIn,
+        //                         pic: {
+        //                             original: result.secure_url,
+        //                             thumb: result.secure_url
+        //                         },
+        //                         map: {
+        //                             lng: socketdata.map.lng,
+        //                             lat: socketdata.map.lat,
+        //                             formattedAddress: formattedAddress
+        //                         },
+        //                         batteryStatus: socketdata.batteryStatus,
+        //                         createdAt: Math.floor(Date.now() /1000)
+        //                     });
+                
+        //                     EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
+        //                         if (err) console.log(err);
+        //                         if(timeIn){
+        //                             console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
+        //                             socket.emit('sv-successTimeIn', {
+        //                                 id: timeIn._id,
+        //                                 timeIn: socketdata.timeIn,
+        //                                 formattedAddress: formattedAddress
+        //                             });
+        //                             console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
+
+        //                             Employee.getEmployeeById(socket.user._id, (err, employee) => {
+        //                                 if (err) console.log(err)
+        //                                 if (employee) {
+        //                                     io.to(socket.user.company).emit('sv-newNotification', {
+        //                                     id: employeeTimeIn.id,
+        //                                     isSeen: false,
+        //                                     name: {
+        //                                         firstName: employee.name.firstName,
+        //                                         lastName: employee.name.lastName,
+        //                                     },
+        //                                     pic: employee.pic.thumb,
+        //                                     timeIn: employeeTimeIn.timeIn
+        //                                 });
+        //                                 }
+        //                             })
+                                    
+        //                         }
+
+        //                     });
+        //                 }
+        //             );                                        
+        //     } 
+        // });
+        // Employee.findById(socketdata.employeeId, (err, employee) => {
+        //     let success = false;
+        //     if (err) {
+        //         console.log(err);
+        //     } else if (!employee) {
+        //         console.log(`_id ${socketdata.employeeId} not found`);
+        //     } else {
+        //         console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
+        //         cloudinary.v2.uploader.upload(socketdata.pic,function(err, result) {
+        //             if (err) {
+        //                 console.log('error uploading')
+        //                 //console.log(err);
+        //             } else {
+        //                 console.log(`Selfie of ${employee.name.firstName} ${employee.name.lastName} successfully uploaded`);
+        //                 unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
+        //                     .end(
+        //                         response => {
+        //                             let employeeTimeIn = new EmployeeTimeIn({
+        //                                 employee: socketdata.employeeId,
+        //                                 timeIn: socketdata.timeIn,
+        //                                 pic: {
+        //                                     original: result.secure_url,
+        //                                     thumb: result.secure_url
+        //                                 },
+        //                                 map: {
+        //                                     lng: socketdata.map.lng,
+        //                                     lat: socketdata.map.lat,
+        //                                     formattedAddress: response.body.results[0].formatted_address
+        //                                 },
+        //                                 batteryStatus: socketdata.batteryStatus
+        //                             });
+        //                             console.log(socketdata.timeIn);
+                        
+        //                             EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
+        //                                 if (err) console.log(err);
+        //                                 if(employeeTimeIn){
+        //                                     console.log(`Time In of ${employee.name.firstName} ${employee.name.lastName} successfully saved\n`);
+        //                                     io.to(socket.id).emit('sv-successTimeIn', {
+        //                                         id: employeeTimeIn._id,
+        //                                         timeIn: socketdata.timeIn,
+        //                                         formattedAddress: response.body.results[0].formatted_address
+        //                                     });
+        //                                     console.log(`Response confirmation of time in succesfully sent to ${employee.name.firstName} ${employee.name.lastName}`)
+
+        //                                     io.emit('sv-newNotification', {
+        //                                         id: employeeTimeIn.id,
+        //                                         isSeen: false,
+        //                                         name: {
+        //                                             firstName: employee.name.firstName,
+        //                                             middleName: employee.name.middleName, 
+        //                                             lastName: employee.name.lastName,
+        //                                         },
+        //                                         pic: employee.pic.thumb,
+        //                                         timeIn: employeeTimeIn.timeIn
+        //                                     });
+        //                                 }
+                                        
+                                        
+        //                             });
+        //                         }
+        //                     );                                        
+        //             } 
+        //         });
+        //     }
+        // })        
     });
 
+    // ok
     socket.on('cl-getNotifDetails', socketData => {
         console.log('Admin requesting notification details');
 
@@ -471,39 +677,34 @@ io.on('connection', (socket) => {
                 console.log('Notification details succesfully sent to admin');
                 socket.emit('sv-serveNotifDetails', {
                     id: employeeTimeIn.id,
-                    pic: employeeTimeIn.pic,
+                    pics: employeeTimeIn.pics,
                     map: employeeTimeIn.map,
                     timeIn: employeeTimeIn.timeIn,
+                    scanDecoded: employeeTimeIn.scanDecoded,
                     batteryStatus: employeeTimeIn.batteryStatus
                 })
             }
         })
     });
 
+    // ok
     socket.on('cl-typing', socketData => {
         if (socketData.employeeId) {
             console.log('Admin typing');
             io.to(socketData.employeeId).emit('sv-adminTyping');
         } else {
-            SocketClient.findOne({socketId: socket.id})
-            .exec((err, socketClient) =>{
-                if (err) {
-                    console.log(err);
-                }
-                if (socketClient) {
-                    console.log('Employee typing');
-                    io.to(socketClient.employeeId).emit('sv-employeeTyping');
-                }
-            });
+            console.log('Employee typing');
+            io.to(socket.user._id).emit('sv-employeeTyping');
         }
         
         
     })
 
+    // ok
     socket.on('cl-getInitMessages', socketData => {
         ///sort and limit the result
         if (!socket.user.isAdmin) {
-            console.log('Employee requesting initial nessages');
+            console.log('Employee requesting initial messages');
             Employee.findById(socket.user._id, (err, employee) =>{
                 if (err) console.log(err);
                 if (employee) {
@@ -520,19 +721,17 @@ io.on('connection', (socket) => {
                 if (employeeTimeIn) {
                     Employee.findById(employeeTimeIn.employee)
                     .exec((err, employee) => {
-                        if (err) console.log(errr);
+                        if (err) console.log(err);
                         if (employee) {
                             
                             let _objKeys = Object.keys(socket.rooms);
                             if(_objKeys.length > 2){
                                 for(let i = 1; i < _objKeys.length; i++){
-                                    
-                                    if (_objKeys[i] == 'adminRoom') continue;
+                                    if (_objKeys[i] == employee.company) continue;
                                     if (_objKeys[i] == employee._id) continue;
                                     socket.leave(_objKeys[i]);
                                 }
                             }
-
                             socket.join(employee._id);
                             
                             Employee.aggregate([
@@ -571,6 +770,7 @@ io.on('connection', (socket) => {
         
     });
 
+    // ok
     socket.on('cl-getAdditionalMessages', socketData => {
         console.log('Request additional message history of selected employee');
         Employee.aggregate([
@@ -602,10 +802,8 @@ io.on('connection', (socket) => {
         })
     })
     
-
+    // ok
     socket.on('cl-sendNewMessage', socketData => {
-        console.log(socketData);
-        //console.log(socketData);
         console.log(`
             ${socket.user.isAdmin ? 'Admin' : 'Employee'} ${socket.user.name.firstName} ${socket.user.name.lastName} sending new message
             Content: ${socketData.content}
@@ -626,8 +824,6 @@ io.on('connection', (socket) => {
             if(employee){
                 console.log('New message saved');
                 newMessage.secret = socketData.secret ? socketData.secret : (Math.floor(Date.now() /1000) + 'qwqwew');
-                // console.log(socketData.employeeId);
-                // console.log(Object.keys(socket.rooms));
 
                 io.to(employeeId).emit('sv-newMessage', newMessage);
 
@@ -639,7 +835,7 @@ io.on('connection', (socket) => {
                     })
                     delete newMessage.secret;
                     delete newMessage.isMe;
-                    io.to('adminRoom').emit('sv-newMessageNotif', newMessage);
+                    io.to(socket.user.company).emit('sv-newMessageNotif', newMessage);
                 }
                 
             }
@@ -647,108 +843,152 @@ io.on('connection', (socket) => {
         })
     });
 
+    // ok
     socket.on('cl-getRecentTimeIns', socketData => {
         console.log('Admin requesting employees recent time ins');
-        EmployeeTimeIn.aggregate(
-            [   { "$lookup": {
-                        "from": "employees",
-                        "localField": "employee",
-                        "foreignField": "_id",
-                        "as": "employeeDetails"
-                    }
-                },
-                { 
-                    "$project" : { 
-                        "_id": 1,
-                        "employee": 1,
-                        "map": 1,
-                        "pic": 1,
-                        "employeeDetails._id": 1,
-                        "employeeDetails.name": 1,
-                        "employeeDetails.pic": 1,
-                        "timeIn": 1
-                    } 
-                },
-                { "$sort": {"timeIn": -1 } },
-                { "$group": {
-                    "_id": "$employee",
-                    "employee": {"$first": "$_id"},
-                    "map": { "$first": "$map" },
-                    "timeIn": {"$first": "$timeIn"},
-                    "pic": {"$first": "$pic"},
-                    "employeeDetails": {"$first": "$employeeDetails"}
-                }}
-            ])
-        .exec((err, results) =>{
-            if (err) console.log(err);
-            if (results) {
-                let employeeTimeIns = results.map(employeeTimeIn => {
-                    return Object.assign({}, {
-                        id: employeeTimeIn.employeeDetails[0]._id,
+        EmployeeTimeIn.getRecentTimeIns(socketData.company, (err, employeeTimeIns) => {
+            if(err) console.log(err)
+            else{
+                employeeTimeIns = employeeTimeIns.map(employeeTimeIn => {
+                    return {
+                        id: employeeTimeIn._id,
                         name: employeeTimeIn.employeeDetails[0].name,
                         pic: employeeTimeIn.employeeDetails[0].pic,
                         isOnline: false,
-                        currentLocation: employeeTimeIn.map,
-                    })
+                        currentLocation: employeeTimeIn.map
+                    }
                 })
-    
                 socket.emit('sv-sendRecentTimeIns', employeeTimeIns);
                 console.log('Employees recent time ins successfully sent to admin');
             }
-            
-            
         })
-
         
     })
 
-    socket.on('cl-unseenLogsCount', () => {
-        EmployeeTimeIn.find({isSeen: false})
-        .exec((err, employeeTimeIns) => {
+    // ok
+    socket.on('cl-unseenLogsCount', socketData => {
+        EmployeeTimeIn.getUnseenLogsCount(socketData.company, (err, employeeTimeIns) => {
             if (err) console.log(err);
-            if(employeeTimeIns){
+            else{
                 socket.emit('sv-unseenLogsCount', employeeTimeIns.length);
             }
+        })        
+    })
+
+    // ok
+    socket.on('cl-saveEmployee', socketData => {
+        if(socketData.add){
+            Employee.addNew(socketData, (err, employee) => {
+                if(err) throw err;
+                if(employee){
+                    console.log(`
+                        New employee successfully save
+                        Id: ${employee._id}
+                        Name: ${employee.name.firstName} ${employee.name.lastName}
+                    `);
+                    socket.emit('sv-saveEmployee',{
+                        success: true,
+                        employee: employee,
+                        add: true,
+                        msg: 'New Employee successfull save'
+                    })
+
+                }
+                
+            });
+        }
+    })
+
+    // ok
+    socket.on('cl-getAllEmployee', socketData => {
+        console.log(`
+            Admin ${socket.user.name.firstName} ${socket.user.name.lastName} requesting initial list of employee
+        `);
+        Employee.getAll(socketData.company, (err, employees) => {
+
+            if(err) throw err;
+            if(employees){
+                console.log(`
+                    ${employees.length} employees successfully sent to Admin ${socket.user.name.firstName} ${socket.user.name.lastName}
+                `);
+                socket.emit('sv-sendAllEmployees', employees);
+            }
         })
-        
+      //  socket.emit('sv-sendAllEmployee');
     })
 
 
 
 
     socket.on('disconnect', () => {
+        
         console.log('Client disconnected with ID: ' + socket.id)
 
-        SocketClient.findOne({socketId: socket.id})
-
-        .exec((err, socketClient) =>{
-            if (err) console.log(err);
-            if (socketClient) {
-                SocketClient.find({ socketId:socket.id }).remove().exec();
-                SocketClient.find({employeeId: socketClient.employeeId})
-                .exec((err, socketClients) =>{
-                    if (err) console.log(err);
-                    if (socketClients) {
-                        console.log(`Socket count: ${socketClients.length}`);
-                        console.log(socketClients);
-                        if (!socketClients.length) {
-                            
-                            let d = Object.assign({}, {
-                                isOnline: false,
-                                id: socketClient.employeeId
-                            })
-                            console.log(socketClient.employeeId);
-                            io.to(socketClient.employeeId).emit('sv-sendSelectedEmployeeStatus', d);
-                            io.to('adminRoom').emit('sv-sendEmployeeStatus', d);
-                        }
-                    }
+        if(!socket.user.isAdmin){
+            let isOnline = getClientsInRoom(io.sockets, socket.user._id, true);
+            if(!isOnline){
+                io.to(socket.user._id).emit('sv-sendSelectedEmployeeStatus', {
+                    isOnline: false,
+                    employeeId: socket.user._id
+                });
+                io.to(socket.user.company).emit('sv-sendEmployeeStatus', {
+                    isOnline: false,
+                    id: socket.user._id
                 });
             }
+        }
+        // SocketClient.findOne({socketId: socket.id})
+        // .exec((err, socketClient) =>{
+        //     if (err) console.log(err);
+        //     if (socketClient) {
+        //         SocketClient.find({ socketId:socket.id }).remove().exec();
+        //         SocketClient.find({employeeId: socketClient.employeeId})
+        //         .exec((err, socketClients) =>{
+        //             if (err) console.log(err);
+        //             if (socketClients) {
+        //                 console.log(`Socket count: ${socketClients.length}`);
+        //                 console.log(socketClients);
+        //                 if (!socketClients.length) {
+                            
+        //                     let d = Object.assign({}, {
+        //                         isOnline: false,
+        //                         id: socketClient.employeeId
+        //                     })
+        //                     console.log(socketClient.employeeId);
+        //                     io.to(socketClient.employeeId).emit('sv-sendSelectedEmployeeStatus', d);
+        //                     io.to('adminRoom').emit('sv-sendEmployeeStatus', d);
+        //                 }
+        //             }
+        //         });
+        //     }
             
-        });
+        // });
 
     });
 
 
         
 });
+
+function getClientsInRoom(_io, employeeId, handleDisconnection){
+    let clients = Object.values(_io.sockets);
+
+    if(handleDisconnection){
+        let clientCount = 0;
+        for (let client of clients){
+            if(client.user._id != employeeId) continue;
+            if (clientCount == 2) return true;
+            clientCount++;
+        }
+        return false;
+    }
+    else{
+        for (let client of clients){
+            if(client.user._id == employeeId) return true;
+        }
+        return false;
+    }
+    
+    
+
+}
