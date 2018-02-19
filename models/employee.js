@@ -79,19 +79,6 @@ module.exports.addNew = (_newEmployee, callback) => {
                         newEmployee.save(callback);
                     }
                 })
-                // cloudinary.v2.uploader.upload(_newEmployee.pic.original,function(err, result) {
-                //     if (err) {
-                //         console.log('error uploading');
-                //         Account.findByIdAndRemove(account._id);
-                //     }
-                //     if(result) {
-                //         newEmployee.pic = {
-                //             original: result.secure_url,
-                //             thumb: result.secure_url
-                //         }
-                //         newEmployee.save(callback);
-                //     } 
-                // });
             }
             else{
                 newEmployee.save(callback);

@@ -15,6 +15,7 @@ const unirest = require('unirest');
 const PORT = process.env.PORT || 8080;
 const INDEX = path.join(__dirname, 'index.html');
 const Employee = require('./models/employee');
+const Message = require('./models/message');
 const EmployeeTimeIn = require('./models/employee-time-in');
 const SocketClient = require('./models/socket-client');
 
@@ -702,103 +703,98 @@ io.on('connection', (socket) => {
 
     // ok
     socket.on('cl-getInitMessages', socketData => {
+        let id = socket.user.isAdmin ? socketData.notificationId : socket.user._id;
+        Message.getInitialMessages(socket.user.isAdmin, id, (err, employeeMessages) => {
+            if(err) console.log(err);
+            else{
+                console.log('Initial message history for selected employee successfully sent');
+                socket.emit('sv-sendInitMessages', employeeMessages);
+            }
+        })
+
+        
         ///sort and limit the result
-        if (!socket.user.isAdmin) {
-            console.log('Employee requesting initial messages');
-            Employee.findById(socket.user._id, (err, employee) =>{
-                if (err) console.log(err);
-                if (employee) {
-                    console.log('Initial message history for selected employee successfully sent');
-                    socket.emit('sv-sendInitMessages', employee.messages);
-                } 
+        // if (!socket.user.isAdmin) {
+        //     console.log('Employee requesting initial messages');
+        //     Employee.findById(socket.user._id, (err, employee) =>{
+        //         if (err) console.log(err);
+        //         if (employee) {
+        //             console.log('Initial message history for selected employee successfully sent');
+        //             socket.emit('sv-sendInitMessages', employee.messages);
+        //         } 
                         
-            })
-        } 
-        else {
-            console.log('Request initial message history of selected employee');
-            EmployeeTimeIn.findById(socketData.notificationId, (err, employeeTimeIn) =>{
-                if (err) console.log(err);
-                if (employeeTimeIn) {
-                    Employee.findById(employeeTimeIn.employee)
-                    .exec((err, employee) => {
-                        if (err) console.log(err);
-                        if (employee) {
+        //     })
+        // } 
+        // else {
+        //     console.log('Request initial message history of selected employee');
+        //     EmployeeTimeIn.findById(socketData.notificationId, (err, employeeTimeIn) =>{
+        //         if (err) console.log(err);
+        //         if (employeeTimeIn) {
+        //             Employee.findById(employeeTimeIn.employee)
+        //             .exec((err, employee) => {
+        //                 if (err) console.log(err);
+        //                 if (employee) {
                             
-                            let _objKeys = Object.keys(socket.rooms);
-                            if(_objKeys.length > 2){
-                                for(let i = 1; i < _objKeys.length; i++){
-                                    if (_objKeys[i] == employee.company) continue;
-                                    if (_objKeys[i] == employee._id) continue;
-                                    socket.leave(_objKeys[i]);
-                                }
-                            }
-                            socket.join(employee._id);
+        //                     let _objKeys = Object.keys(socket.rooms);
+        //                     if(_objKeys.length > 2){
+        //                         for(let i = 1; i < _objKeys.length; i++){
+        //                             if (_objKeys[i] == employee.company) continue;
+        //                             if (_objKeys[i] == employee._id) continue;
+        //                             socket.leave(_objKeys[i]);
+        //                         }
+        //                     }
+        //                     socket.join(employee._id);
                             
-                            Employee.aggregate([
-                                {"$match": {"_id": employeeTimeIn.employee}},
-                                {"$project": {
-                                    "messages": 1,
-                                }},
-                                {"$unwind": "$messages"},
-                                {"$sort": {"messages.sentAt": -1}},
-                                {"$limit": 20},
-                                {"$project": {
-                                    "messages": "$messages"
-                                }},
-                            ])
-                            .exec((err, results) => {
-                                if (err) console.log(err);
-                                if (results) {
-                                    results = results.map(result => {
-                                        return result.messages
-                                    })
-                                    employee = Object.assign({}, {
-                                        _id: employee._id,
-                                        name: employee.name,
-                                        pic: employee.pic
-                                    }, {messages: results});
-                                    console.log('Initial message history for selected employee successfully sent');
-                                    socket.emit('sv-sendInitMessages', employee);
-                                }
-                            })
-                        }
-                    })
-                } 
+        //                     Employee.aggregate([
+        //                         {"$match": {"_id": employeeTimeIn.employee}},
+        //                         {"$project": {
+        //                             "messages": 1,
+        //                         }},
+        //                         {"$unwind": "$messages"},
+        //                         {"$sort": {"messages.sentAt": -1}},
+        //                         {"$limit": 20},
+        //                         {"$project": {
+        //                             "messages": "$messages"
+        //                         }},
+        //                     ])
+        //                     .exec((err, results) => {
+        //                         if (err) console.log(err);
+        //                         if (results) {
+        //                             results = results.map(result => {
+        //                                 return result.messages
+        //                             })
+        //                             employee = Object.assign({}, {
+        //                                 _id: employee._id,
+        //                                 name: employee.name,
+        //                                 pic: employee.pic
+        //                             }, {messages: results});
+        //                             console.log('Initial message history for selected employee successfully sent');
+        //                             socket.emit('sv-sendInitMessages', employee);
+        //                         }
+        //                     })
+        //                 }
+        //             })
+        //         } 
                 
-            })
-        }
+        //     })
+        // }
         
     });
 
     // ok
     socket.on('cl-getAdditionalMessages', socketData => {
         console.log('Request additional message history of selected employee');
-        Employee.aggregate([
-            {"$match": {"_id": ObjectId(socketData.employeeId)}},
-            {"$project": {
-                "messages": 1,
-            }},
-            {"$unwind": "$messages"},
-            {"$match": {"messages.sentAt": {"$lt": socketData.sentAt}}},
-            {"$unwind": "$messages"},
-            {"$sort": {"messages.sentAt": -1}},
-            {"$limit": 20},
-            {"$project": {
-                "messages": "$messages"
-            }},
-        ])
-        .exec((err, results) => {
-            if (err) console.log(err);
-            if (results) {
-                results = results.map(result => {
-                    return result.messages
-                })
+        let id = socket.user.isAdmin ? socketData.employeeId : socket.user._id;
+        Message.getAdditionalMessages(id, socketData.sentAt, (err, messages) => {
+            if(err) console.log(err)
+            else{
                 let employee = Object.assign({}, {
                     employeeId: socketData.employeeId,
-                }, {messages: results});
+                }, {messages: messages});
                 console.log('Additional message history for selected employee successfully sent');
                 socket.emit('sv-sendAdditionalMessages', employee);
             }
+            
         })
     })
     
@@ -808,39 +804,100 @@ io.on('connection', (socket) => {
             ${socket.user.isAdmin ? 'Admin' : 'Employee'} ${socket.user.name.firstName} ${socket.user.name.lastName} sending new message
             Content: ${socketData.content}
         `);
-
-        let newMessage = {
+        
+        let employeeId = socket.user.isAdmin ? socketData.employeeId : socket.user._id;
+        let newMessage = new Message({
+            employee: ObjectId(employeeId),
             isMe: !socket.user.isAdmin,
             content: socketData.content,
             sentAt: Math.floor(Date.now() /1000)
-        }
+        });
 
-        let employeeId = socket.user.isAdmin ? socketData.employeeId : socket.user._id;
-        Employee.findByIdAndUpdate(employeeId, {
-            $push: {'messages': newMessage}
-        }, (err, employee) => {
+        Message.addNew(newMessage, (err, message) => {
             if(err) console.log(err);
-
-            if(employee){
-                console.log('New message saved');
-                newMessage.secret = socketData.secret ? socketData.secret : (Math.floor(Date.now() /1000) + 'qwqwew');
-
-                io.to(employeeId).emit('sv-newMessage', newMessage);
+            if(message){
+                console.log('New message saved');                
+                let secret = socketData.secret ? socketData.secret : (Math.floor(Date.now() /1000) + 'qwqwew');
+                let _newMessage = Object.assign({}, {
+                    _id: newMessage._id,
+                    employee: newMessage.employee,
+                    seenAt: newMessage.seenAt,
+                    sentAt: newMessage.sentAt,
+                    content: newMessage.content,
+                    isMe: newMessage.isMe,
+                    secret: secret
+                })
+                io.to(employeeId).emit('sv-newMessage', _newMessage);
 
                 if(!socket.user.isAdmin) {
-                    newMessage = Object.assign({}, newMessage, {
-                        pic: employee.pic.thumb,
-                        name: employee.name,
-                        id: employee._id
+                    Employee.findById(employeeId, (err, employee) => {
+                        if(err) console.log(err);
+                        if(employee) {
+                            _newMessage = Object.assign({}, _newMessage, {
+                                pic: employee.pic.thumb,
+                                name: employee.name,
+                                id: employee._id
+                            })
+                            delete _newMessage.secret;
+                            delete _newMessage.isMe;
+                            io.to(socket.user.company).emit('sv-newMessageNotif', _newMessage);
+                        }
                     })
-                    delete newMessage.secret;
-                    delete newMessage.isMe;
-                    io.to(socket.user.company).emit('sv-newMessageNotif', newMessage);
+                    
+                    
                 }
                 
-            }
 
+                // newMessage = Object.assign({}, newMessage, {
+                //     pic: employee.pic.thumb,
+                //     name: employee.name,
+                //     id: employee._id
+                // })
+                // delete newMessage.secret;
+                // delete newMessage.isMe;
+
+                // console.log(_newMessage);
+                // return;
+
+
+                // if(!socket.user.isAdmin) {
+                //     newMessage = Object.assign({}, newMessage, {
+                //         pic: employee.pic.thumb,
+                //         name: employee.name,
+                //         id: employee._id
+                //     })
+                //     delete newMessage.secret;
+                //     delete newMessage.isMe;
+                //     io.to(socket.user.company).emit('sv-newMessageNotif', newMessage);
+                // }
+            }
         })
+
+        // Employee.findByIdAndUpdate(employeeId, {
+        //     $push: {'messages': newMessage}
+        // }, (err, employee) => {
+        //     if(err) console.log(err);
+
+        //     if(employee){
+        //         console.log('New message saved');
+        //         newMessage.secret = socketData.secret ? socketData.secret : (Math.floor(Date.now() /1000) + 'qwqwew');
+
+        //         io.to(employeeId).emit('sv-newMessage', newMessage);
+
+        //         if(!socket.user.isAdmin) {
+        //             newMessage = Object.assign({}, newMessage, {
+        //                 pic: employee.pic.thumb,
+        //                 name: employee.name,
+        //                 id: employee._id
+        //             })
+        //             delete newMessage.secret;
+        //             delete newMessage.isMe;
+        //             io.to(socket.user.company).emit('sv-newMessageNotif', newMessage);
+        //         }
+                
+        //     }
+
+        // })
     });
 
     // ok

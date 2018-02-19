@@ -7,7 +7,7 @@
     "node": "6.2.0"
   },
   "scripts": {
-    "start": "sudo service mongod start & nodemon server.js"
+    "start": "service mongod start & nodemon server.js"
   },
   "keywords": [],
   "author": "",
