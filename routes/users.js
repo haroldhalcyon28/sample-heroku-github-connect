@@ -183,41 +183,32 @@ router.get('/companies', passport.authenticate('jwt', {session:false}), function
     
 });
 
+router.post('/check-username', passport.authenticate('jwt', {session:false}), function (req, res, next) {
+    console.log('Checking username availability');
+    let _response = {ok: true}
+    Account.findOne({username: req.body.username}, (err, account) => {
+        if(err) console.log(err);
+        else{
+            _response.ok = account ? false : true;
+            console.log(`Username ${req.body.username} ${_response.ok ? 'available' : 'already taken'}`);
+            res.json(_response);
+        }
+    })
+});
+
+router.post('/check-demoname', passport.authenticate('jwt', {session:false}), function (req, res, next) {
+    console.log('Checking demo name availability');
+    let _response = {ok: true}
+    Company.findOne({name: req.body.demoname.trim()}, (err, company) => {
+        if(err) console.log(err);
+        else{
+            _response.ok = company ? false : true;
+            console.log(`Demo name ${req.body.demoname} ${_response.ok ? 'available' : 'already taken'}`);
+            res.json(_response);
+        }
+    })
+});
+
 
 
 module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// let newAdmin = new Admin(
-//     //     {
-//     //         username: 'admin',
-//     //         password: 'admin',
-//     //         name: {
-//     //             firstName:' mark phillip',
-//     //             lastName: 'Causing',
-//     //             middleName: ''
-//     //         },
-//     //         pic: {
-//     //             original: 'https://cdn.pixabay.com/photo/2016/08/20/05/38/avatar-1606916_960_720.png',
-//     //             thumb: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRArL5ZYgvYomgLZ6QKxjLO6iK-w6UqdRakfN56wFzWwE7ewq0O'
-//     //         }
-//     //     }
-//     // )
-    
-    
-//     // Admin.addNew(newAdmin, (err, admin) => {
-//     //     if (err) throw err;
-//     //     console.log(admin);
-//     // })

@@ -343,6 +343,12 @@ io.on('connection', (socket) => {
         // });
     })
 
+    socket.on('cl-getInitialAllEmployeeStatus', socketData => {
+        for(let e of socketData.employeeIds){
+            io.to(e).emit('sv-myCurrentStatus');
+        }
+    })
+
     // ok
     socket.on('cl-myCurrentStatus', socketData => {
         EmployeeTimeIn.find({employee: socket.user._id})
@@ -475,7 +481,7 @@ io.on('connection', (socket) => {
     });
 
     // ok
-    socket.on('cl-timeIn', socketdata => {
+    socket.on('cl-timeIn', (socketdata, clientCallback) => {
         Util.uploadMultiple(socketdata.pics, (err, uploadedImages) => {
                     if (err) throw err;
                     if(uploadedImages.length) {
@@ -502,11 +508,14 @@ io.on('connection', (socket) => {
                                         if (err) console.log(err);
                                         if(timeIn){
                                             console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
-                                            socket.emit('sv-successTimeIn', {
+
+                                            clientCallback({
                                                 id: timeIn._id,
                                                 timeIn: socketdata.timeIn,
                                                 formattedAddress: formattedAddress
-                                            });
+                                            })
+                                            
+                                            // socket.emit('sv-successTimeIn', );
                                             console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
 
                                             Employee.getEmployeeById(socket.user._id, (err, employee) => {
@@ -800,6 +809,7 @@ io.on('connection', (socket) => {
     
     // ok
     socket.on('cl-sendNewMessage', socketData => {
+        console.log(socketData);
         console.log(`
             ${socket.user.isAdmin ? 'Admin' : 'Employee'} ${socket.user.name.firstName} ${socket.user.name.lastName} sending new message
             Content: ${socketData.content}
@@ -901,6 +911,23 @@ io.on('connection', (socket) => {
     });
 
     // ok
+    socket.on('cl-seenMessage', socketData => {
+        Message.findById(socketData._id, (err, message) => {
+            if(err) console.log(err);
+            if(message){
+                if(!message.seenAt) message.seenAt = Math.floor(Date.now() /1000);
+                message.save((_err, _message) => {
+                    io.to(_message.employee).emit('sv-seenMessage', {
+                        _id: _message._id,
+                        seenAt: _message.seenAt
+                    })
+                });
+                
+            }
+        })
+    })
+
+    // ok
     socket.on('cl-getRecentTimeIns', socketData => {
         console.log('Admin requesting employees recent time ins');
         EmployeeTimeIn.getRecentTimeIns(socketData.company, (err, employeeTimeIns) => {
@@ -933,7 +960,7 @@ io.on('connection', (socket) => {
     })
 
     // ok
-    socket.on('cl-saveEmployee', socketData => {
+    socket.on('cl-saveEmployee', (socketData, clientCallback) => {
         if(socketData.add){
             Employee.addNew(socketData, (err, employee) => {
                 if(err) throw err;
@@ -953,6 +980,9 @@ io.on('connection', (socket) => {
                 }
                 
             });
+        }
+        if(socketData.update){
+            Employee.update(socketData, clientCallback);
         }
     })
 
@@ -974,6 +1004,11 @@ io.on('connection', (socket) => {
       //  socket.emit('sv-sendAllEmployee');
     })
 
+    socket.on('cl-deleteEmployee', socketData => {
+        Employee.delete(socketData.employeeId, (err, employee) => {
+            console.log(`Employee ${employee.name.firstName} ${employee.name.lastName} marked as deleted`);
+        });
+    })
 
 
 

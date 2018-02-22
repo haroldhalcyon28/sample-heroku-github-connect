@@ -39,7 +39,11 @@ const employeeSchema = new Schema({
                 },
             }
         ],
-        createdAt: Number
+        createdAt: Number,
+        deleted: {
+            type: Boolean,
+            default: false
+        }
 });
 
 const Employee = module.exports =  mongoose.model('Employee', employeeSchema);
@@ -92,10 +96,53 @@ module.exports.addNew = (_newEmployee, callback) => {
     })
 }
 
+module.exports.update = (employee, callback) => {
+    console.log(employee);
+    let pic = '';
+    function _update(){
+        Employee.findById(employee._id, (err, _employee) => {
+            if(err) console.log(err);
+            if(_employee){
+                _employee.name = employee.name;
+                if(pic){
+                    _employee.pic.original = pic;
+                    _employee.pic.thumb = pic;
+                }
+                _employee.save((__err, __employee) => {
+                    if(!err && __employee){
+                        callback({
+                            name: __employee.name,
+                            pic: __employee.pic
+                        })
+                    }
+                })
+            }
+        })
+    }
+    if(employee.pic){
+        Util.upload(employee.pic, (err, result) => {
+            if (err) console.log(err);
+            if(result) {
+                pic = result.secure_url;
+                _update();
+            }
+        })
+    }
+    else{
+        _update();
+    }
+
+}
+
 module.exports.getAll = (company, callback) => {
-    Employee.find({company: company}, callback);
+    Employee.find({company: company, deleted: false}, callback);
 }
 
 module.exports.getEmployeeById  = (id, callback) => {
     Employee.findById(id, callback);
+}
+
+module.exports.delete = (id, callback) => {
+    console.log(id);
+    Employee.findByIdAndUpdate(id, {$set: {deleted: true}}, callback);
 }

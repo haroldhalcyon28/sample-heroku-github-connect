@@ -51,7 +51,7 @@ module.exports.getInitNotif = (company, callback) => {
                         as: "employeeDetails"
                     }
                 },
-                { $match: {"employeeDetails.company": ObjectId(company)}},
+                { $match: {"employeeDetails.company": ObjectId(company), "employeeDetails.deleted": false}},
                 { 
                     $project : { 
                         _id: 1,
@@ -90,6 +90,7 @@ module.exports.getAdditionalNotif = (company, timeIn, callback) => {
             },
             { $match: {
                 "employeeDetails.company": ObjectId(company),
+                "employeeDetails.deleted": false,
                 timeIn: {$lt: timeIn}
                 }
             },
@@ -128,7 +129,7 @@ module.exports.getRecentTimeIns = (company, callback) => {
                         as: "employeeDetails"
                     }
                 },
-                { $match: {"employeeDetails.company": ObjectId(company)}},
+                { $match: {"employeeDetails.company": ObjectId(company), "employeeDetails.deleted": false}},
                 { 
                     $project : { 
                         employee: 1,
@@ -147,12 +148,6 @@ module.exports.getRecentTimeIns = (company, callback) => {
                 }}
             ])
         .exec(callback)
-
-        // id: employeeTimeIn._id,
-        //                 name: employeeTimeIn.employeeDetails[0].name,
-        //                 pic: employeeTimeIn.employeeDetails[0].pic,
-        //                 isOnline: false,
-        //                 currentLocation: employeeTimeIn.map,
 }
 
 module.exports.getUnseenLogsCount = (company, callback) => {
