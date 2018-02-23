@@ -483,64 +483,64 @@ io.on('connection', (socket) => {
     // ok
     socket.on('cl-timeIn', (socketdata, clientCallback) => {
         Util.uploadMultiple(socketdata.pics, (err, uploadedImages) => {
-                    if (err) throw err;
-                    if(uploadedImages.length) {
-                        console.log(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
-                        unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
-                            .end(
-                                response => {
-                                    let formattedAddress = response.body.results[0].formatted_address;
-                                    let employeeTimeIn = new EmployeeTimeIn({
-                                        employee: socket.user._id,
+            if (err) console.log(err);
+            if(uploadedImages.length) {
+                console.log(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
+                unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
+                    .end(
+                        response => {
+                            let formattedAddress = response.body.results[0].formatted_address;
+                            let employeeTimeIn = new EmployeeTimeIn({
+                                employee: socket.user._id,
+                                timeIn: socketdata.timeIn,
+                                pics: uploadedImages,
+                                scanDecoded: socketdata.scanResult,
+                                map: {
+                                    lng: socketdata.map.lng,
+                                    lat: socketdata.map.lat,
+                                    formattedAddress: formattedAddress
+                                },
+                                batteryStatus: socketdata.batteryStatus,
+                                createdAt: Math.floor(Date.now() /1000)
+                            });
+                
+                            EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
+                                if (err) console.log(err);
+                                if(timeIn){
+                                    console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
+
+                                    clientCallback({
+                                        id: timeIn._id,
                                         timeIn: socketdata.timeIn,
-                                        pics: uploadedImages,
-                                        scanDecoded: socketdata.scanResult,
-                                        map: {
-                                            lng: socketdata.map.lng,
-                                            lat: socketdata.map.lat,
-                                            formattedAddress: formattedAddress
-                                        },
-                                        batteryStatus: socketdata.batteryStatus,
-                                        createdAt: Math.floor(Date.now() /1000)
-                                    });
-                        
-                                    EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
-                                        if (err) console.log(err);
-                                        if(timeIn){
-                                            console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
+                                        formattedAddress: formattedAddress
+                                    })
+                                    
+                                    // socket.emit('sv-successTimeIn', );
+                                    console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
 
-                                            clientCallback({
-                                                id: timeIn._id,
-                                                timeIn: socketdata.timeIn,
-                                                formattedAddress: formattedAddress
-                                            })
-                                            
-                                            // socket.emit('sv-successTimeIn', );
-                                            console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
-
-                                            Employee.getEmployeeById(socket.user._id, (err, employee) => {
-                                                if (err) console.log(err)
-                                                if (employee) {
-                                                    io.to(socket.user.company).emit('sv-newNotification', {
-                                                        id: employeeTimeIn.id,
-                                                        isSeen: false,
-                                                        name: {
-                                                            firstName: employee.name.firstName,
-                                                            lastName: employee.name.lastName,
-                                                        },
-                                                        pic: employee.pic.thumb,
-                                                        timeIn: employeeTimeIn.timeIn
-                                                });
-                                                }
-                                            })
-                                            
+                                    Employee.getEmployeeById(socket.user._id, (err, employee) => {
+                                        if (err) console.log(err)
+                                        if (employee) {
+                                            io.to(socket.user.company).emit('sv-newNotification', {
+                                                id: employeeTimeIn.id,
+                                                isSeen: false,
+                                                name: {
+                                                    firstName: employee.name.firstName,
+                                                    lastName: employee.name.lastName,
+                                                },
+                                                pic: employee.pic.thumb,
+                                                timeIn: employeeTimeIn.timeIn
+                                        });
                                         }
-
-                                    });
+                                    })
+                                    
                                 }
-                            );
-                    }
-                })
+
+                            });
+                        }
+                    );
+            }
+        })
         // cloudinary.v2.uploader.upload(socketdata.pic[0],function(err, result) {
         //     if (err) {
         //         console.log('error uploading')

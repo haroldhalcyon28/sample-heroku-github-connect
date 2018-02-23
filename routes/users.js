@@ -6,7 +6,8 @@ const config = require('../config/config');
 const passport =  require('passport');
 const Company = require('../models/company');
 const Employee = require('../models/employee');
-
+const Util = require('../util/util');
+const ObjectId = require('mongodb').ObjectID;
 
 
 
@@ -103,40 +104,84 @@ router.post('/check-authentication', passport.authenticate('jwt', {session:false
 });
 
 router.post('/company', passport.authenticate('jwt', {session:false}), function (req, res, next) {
-    let newCompany = new Company({
-        name: req.body.name,
-        logo: req.body.logo ? req.body.logo : 'http://res.cloudinary.com/dka3vzadb/image/upload/v1517996051/download_yblqwi.png'
-    })
+    let logo = '';
 
-    let response = {success: false}
-    Company.getCompanyByQuery({name: req.body.name}, (err, c) => {
-        console.log(c);
-        if (err) console.log(err);
-        if(c){
-            response = Object.assign({}, response, {
-                msg: `Name ${req.body.name} already taken`
-            })
+    function _addCompany(){
+        let newCompany = new Company({
+            name: req.body.name,
+            logo: logo
+        })
+
+        let response = {success: false}
+        Company.addNew(newCompany, (err, company) => {
+            if(err){
+                console.log(err);
+                response = Object.assign({}, response, {
+                    msg: err
+                })
+            }
+            if(company){
+                response = Object.assign({}, response, {
+                    success: true,
+                    company: company,
+                    msg: 'New company successfully addedd'
+                })
+            }
             res.json(response);
-        }
-        else{
-            Company.addNew(newCompany, (err, company) => {
-                if(err){
-                    console.log(err);
-                    response = Object.assign({}, response, {
-                        msg: err
-                    })
-                }
-                if(company){
+        })
+    }
+    if(req.body.logo){
+        Util.upload(req.body.logo, (err, result) => {
+            if (err) console.log(err);
+            if(result) {
+                logo = result.secure_url
+                _addCompany()
+            };
+        })
+    }
+    else{
+        _addCompany();
+    }
+
+    
+});
+
+router.put('/company', passport.authenticate('jwt', {session:false}), function (req, res, next) {
+    let logo = '';
+
+    function _updateCompany(){
+        let response = {success: false}
+        Company.findById(req.body._id, (err, company) => {
+            if(err) console.log(err);
+            if(company){
+                company.name = req.body.name.trim();
+                if(logo) company.logo = logo;
+                company.save((_err, _company) => {
                     response = Object.assign({}, response, {
                         success: true,
                         company: company,
-                        msg: 'New company successfully addedd'
+                        msg: 'New company successfully updated'
                     })
-                }
-                res.json(response);
-            })
-        }
-    } )
+                    res.json(response);
+                })
+                
+            }
+            
+        })
+    }
+    if(req.body.logo){
+        Util.upload(req.body.logo, (err, result) => {
+            if (err) console.log(err);
+            if(result) {
+                logo = result.secure_url
+                _updateCompany()
+            };
+        })
+    }
+    else{
+        _updateCompany();
+    }
+
     
 });
 
@@ -199,16 +244,35 @@ router.post('/check-username', passport.authenticate('jwt', {session:false}), fu
 router.post('/check-demoname', passport.authenticate('jwt', {session:false}), function (req, res, next) {
     console.log('Checking demo name availability');
     let _response = {ok: true}
-    Company.findOne({name: req.body.demoname.trim()}, (err, company) => {
+    let query = {name: req.body.demoname.trim()};
+
+
+    Company.find(query, (err, company) => {
         if(err) console.log(err);
         else{
-            _response.ok = company ? false : true;
+            _response.ok = true;
+            for(c of company){
+                if(!req.body._id && (c._id !== req.body._id)){
+                    _response.ok = false;
+                }
+            }
+
             console.log(`Demo name ${req.body.demoname} ${_response.ok ? 'available' : 'already taken'}`);
             res.json(_response);
         }
     })
 });
 
+router.delete('/company/:id', passport.authenticate('jwt', {session:false}), function (req, res, next) {
+    Company.findById(req.params.id, (err, company) => {
+        company.deleted = true;
+        company.save((err, company) => {
+            console.log(`Company ${company.name} successfully soft deleted`);
+        })
+    })
+
+    
+});
 
 
 module.exports = router;

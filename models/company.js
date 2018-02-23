@@ -4,7 +4,11 @@ const Schema = mongoose.Schema;
 
 const companySchema = new Schema({
     name: String,
-    logo: String
+    logo: String,
+    deleted: {
+        type: Boolean,
+        default: false
+    }
 });
 
 const Company = module.exports =  mongoose.model('Company', companySchema);
@@ -24,5 +28,5 @@ module.exports.getCompanyByQuery = function(query, callback) {
 
 
 module.exports.getAll = function(callback) {
-    Company.find({}, callback);
+    Company.find({deleted: false}, callback);
 }
