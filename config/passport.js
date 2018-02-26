@@ -14,7 +14,24 @@ module.exports = function(passport) {
       }
 
       if(user) {
-        return done(null, user);
+        if(!user.isAdmin){
+          Account.checkEmployeeAccount(user._id, (_err, _user) =>{
+            if(_err){
+              console.log(_err)
+              return done(_err, false);
+            }
+            if(_user.length){
+              return done(null, _user[0]);
+            }
+            else{
+              return done(_err, false);
+            }
+          })          
+        }
+        else{
+          return done(null, user);
+        }
+        
       } else {
         return done(null, false);
       }

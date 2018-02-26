@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const Schema = mongoose.Schema;
 const ObjectId = require('mongodb').ObjectID;
-const Account = require('./account');
+
 
 const config = require('../config/config');
 const cloudinary = config.cloudinary;
@@ -47,57 +48,68 @@ const employeeSchema = new Schema({
 });
 
 const Employee = module.exports =  mongoose.model('Employee', employeeSchema);
+const Account = require('./account');
 
 module.exports.addNew = (_newEmployee, callback) => {
-    let newAccount = new Account({
-        username: _newEmployee.username,
-        password: _newEmployee.password
-    })
- 
-    Account.addNew(newAccount, (err, account) => {
-        if(err) throw err;
-        if(account){
-            let newEmployee = new Employee({
-                _id: account._id,
-                company: _newEmployee.company,
-                name: _newEmployee.name,
-                pic: {
-                    original: '',
-                    thumb: ''
-                },
-                messages: [],
-                createdAt: Math.floor(Date.now() /1000)
-            })
+    
+    
+    function _addNew(){
+        let newAccount = new Account({
+            username: _newEmployee.username,
+            password: _newEmployee.password
+        })
 
-            if (_newEmployee.pic.original){
-                Util.upload(_newEmployee.pic.original, (err, result) => {
-                    if (err) { 
-                        Account.findByIdAndRemove(account._id);
-                        throw err;
-                    }
-                    if(result) {
-                        newEmployee.pic = {
-                            original: result.secure_url,
-                            thumb: result.secure_url
-                        }
-                        newEmployee.save(callback);
-                    }
+        Account.addNew(newAccount, (err, account) => {
+            if(err) throw err;
+            if(account){
+                let newEmployee = new Employee({
+                    _id: account._id,
+                    company: _newEmployee.company,
+                    name: _newEmployee.name,
+                    pic: {
+                        original: '',
+                        thumb: ''
+                    },
+                    messages: [],
+                    createdAt: Math.floor(Date.now() /1000)
                 })
-            }
-            else{
-                newEmployee.save(callback);
-            }
-            
-            
+    
+                if (_newEmployee.pic.original){
+                    Util.upload(_newEmployee.pic.original, (err, result) => {
+                        if (err) { 
+                            Account.findByIdAndRemove(account._id);
+                            throw err;
+                        }
+                        if(result) {
+                            newEmployee.pic = {
+                                original: result.secure_url,
+                                thumb: result.secure_url
+                            }
+                            newEmployee.save(callback);
+                        }
+                    })
+                }
+                else{
+                    newEmployee.save(callback);
+                }
 
-            
-            
-        }
-    })
+            }
+        })
+    }
+
+    bcrypt.genSalt(10, (err, salt) => {
+        bcrypt.hash(_newEmployee.password, salt, (err, hash) => {
+          if(err) console.log(err);
+          if(hash){
+            _newEmployee.password = hash;
+            _addNew();
+          }
+        });
+      });
+    
 }
 
 module.exports.update = (employee, callback) => {
-    console.log(employee);
     let pic = '';
     function _update(){
         Employee.findById(employee._id, (err, _employee) => {

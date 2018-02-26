@@ -14,7 +14,11 @@ const path = require('path');
 const unirest = require('unirest');
 const PORT = process.env.PORT || 8080;
 const INDEX = path.join(__dirname, 'index.html');
+
+const Account = require('./models/account');
 const Employee = require('./models/employee');
+
+
 const Message = require('./models/message');
 const EmployeeTimeIn = require('./models/employee-time-in');
 const SocketClient = require('./models/socket-client');
@@ -84,7 +88,7 @@ SocketClient.remove({}, function(err, row) {
 
 
 const jwt = require('jsonwebtoken');
-const Account = require('./models/account');
+
 io.use((socket, next) => {
     
     let token = socket.handshake.query.token;
@@ -170,8 +174,25 @@ io.on('connection', (socket) => {
 
     // ok
     socket.on('cl-adminLeaveAndJoinRoom', socketData => {
-        socket.leave(socketData.roomLeave);
-        socket.join(socketData.roomJoin);
+        let _objKeys = Object.keys(socket.rooms);
+        let roomLeaveFound = false;
+        for(let i = 0; i < _objKeys.length; i++){
+            if (_objKeys[i] === socketData.roomLeave){
+                roomLeaveFound = true;
+                break;
+            }
+        }
+        if(roomLeaveFound){
+            if(socketData.roomLeave !== socketData.roomJoin){
+                socket.leave(socketData.roomLeave);
+                socket.join(socketData.roomJoin);
+            }
+        }
+        else{
+            socket.join(socketData.roomJoin);
+        }
+        
+        
     })
 
     // ok
@@ -204,143 +225,39 @@ io.on('connection', (socket) => {
         }
         else{
             console.log('Employee is offline');
-                EmployeeTimeIn.find({employee: socketData.employeeId})
-                .populate(
-                    {
-                        path:'employee',
-                        select: 'name  pic'
-                    })
-                .limit(1)
-                .sort({timeIn: -1})
-                .exec(function (err, employeeTimeIns) {
-                    if (err) console.log(err);
+            EmployeeTimeIn.find({employee: socketData.employeeId})
+            .populate(
+                {
+                    path:'employee',
+                    select: 'name  pic'
+                })
+            .limit(1)
+            .sort({timeIn: -1})
+            .exec(function (err, employeeTimeIns) {
+                if (err) console.log(err);
 
-                    if (employeeTimeIns.length) {
-                        let employee = employeeTimeIns.map(timeIn => {
-                            return {
-                                employeeId: socketData.employeeId,
-                                name: timeIn.employee.name,
-                                pic: timeIn.employee.pic,
-                                previousLocation: timeIn.map,
-                                isOnline: false,
-                                selfies: timeIn.pics
-                            }
-                        })
-                        console.log('Details of employee successfully sent to admin');
-
-                        socket.emit('sv-sendSelectedEmployeeStatus', employee[0]);
-                        socket.emit('sv-sendEmployeeStatus', {
+                if (employeeTimeIns.length) {
+                    let employee = employeeTimeIns.map(timeIn => {
+                        return {
+                            employeeId: socketData.employeeId,
+                            name: timeIn.employee.name,
+                            pic: timeIn.employee.pic,
+                            previousLocation: timeIn.map,
                             isOnline: false,
-                            id: socketData.employeeId
-                        });
-                        
-                    } 
-                });
+                            selfies: timeIn.pics
+                        }
+                    })
+                    console.log('Details of employee successfully sent to admin');
+
+                    socket.emit('sv-sendSelectedEmployeeStatus', employee[0]);
+                    socket.emit('sv-sendEmployeeStatus', {
+                        isOnline: false,
+                        id: socketData.employeeId
+                    });
+                    
+                } 
+            });
         }
-        
-        // let _objKeys = Object.keys(socket.rooms);
-        // if(_objKeys.length > 2){
-        //     for(let i = 1; i < _objKeys.length; i++){
-        //         if (_objKeys[i] == 'adminRoom') continue;
-        //         if(socketData.employeeId == _objKeys[i]) continue;
-        //         socket.leave(_objKeys[i]);
-        //     }
-        // } // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
-        //             if (err) { 
-        //                 Account.findByIdAndRemove(account._id);
-        //                 throw err;
-        //             }
-        //             if(results.length) {
-        //                 newEmployee.pic = {
-        //                     original: results[0].original,
-        //                     thumb: results[0].thumb
-        //                 }
-        //                 console.log(results);
-        //                 newEmployee.save(callback);
-        //             }
-        //         }) // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
-        //             if (err) { 
-        //                 Account.findByIdAndRemove(account._id);
-        //                 throw err;
-        //             }
-        //             if(results.length) {
-        //                 newEmployee.pic = {
-        //                     original: results[0].original,
-        //                     thumb: results[0].thumb
-        //                 }
-        //                 console.log(results);
-        //                 newEmployee.save(callback);
-        //             }
-        //         }) // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
-        //             if (err) { 
-        //                 Account.findByIdAndRemove(account._id);
-        //                 throw err;
-        //             }
-        //             if(results.length) {
-        //                 newEmployee.pic = {
-        //                     original: results[0].original,
-        //                     thumb: results[0].thumb
-        //                 }
-        //                 console.log(results);
-        //                 newEmployee.save(callback);
-        //             }
-        //         })
-        // socket.join(socketData.employeeId);
-
-        // SocketClient.findOne({employeeId: socketData.employeeId})
-        // .exec((err, socketClient) =>{
-        //     if (err) console.log(err);
-        //     if (socketClient) {
-        //         console.log('Admin requesting status of selected employee');
-        //         io.to(socketClient.socketId).emit('sv-myCurrentStatus');
-        //     }
-        //     else{
-        //         console.log('Employee is offline');
-        //         EmployeeTimeIn.find({employee: socketData.employeeId})
-        //         .populate( // Util.uploadMultiple([_newEmployee.pic.original, 'https://res.cloudinary.com/dka3vzadb/image/upload/v1518572757/x4t0x3nxrvsa5gubnbvv.png'], (err, results) => {
-        //             if (err) { 
-        //                 Account.findByIdAndRemove(account._id);
-        //                 throw err;
-        //             }
-        //             if(results.length) {
-        //                 newEmployee.pic = {
-        //                     original: results[0].original,
-        //                     thumb: results[0].thumb
-        //                 }
-        //                 console.log(results);
-        //                 newEmployee.save(callback);
-        //             }
-        //         })
-        //             {
-        //                 path:'employee',
-        //                 select: 'name  pic'
-        //             })
-        //         .limit(1)
-        //         .sort({timeIn: -1})
-        //         .exec(function (err, employeeTimeIns) {
-        //             if (err) console.log(err);
-
-        //             if (employeeTimeIns.length) {
-        //                 let employee = employeeTimeIns.map(timeIn => {
-        //                     return {
-        //                         name: timeIn.employee.name,
-        //                         pic: timeIn.employee.pic,
-        //                         previousLocation: timeIn.map,
-        //                         isOnline: false,
-        //                         selfie: timeIn.pic
-        //                     }
-        //                 })
-        //                 console.log('Details of employee successfully sent to admin');
-        //                 io.to(socketData.employeeId).emit('sv-sendSelectedEmployeeStatus', employee[0]);
-        //                 io.to('adminRoom').emit('sv-sendEmployeeStatus', {
-        //                     isOnline: true,
-        //                     id: socketData.employeeId
-        //                 });
-                        
-        //             } 
-        //         });
-        //     }
-        // });
     })
 
     socket.on('cl-getInitialAllEmployeeStatus', socketData => {
@@ -383,50 +300,7 @@ io.on('connection', (socket) => {
                 io.to(socket.user._id).emit('sv-sendSelectedEmployeeStatus', e);
                 console.log('Employee status successfully sent to admin');
             } 
-        });
-        // SocketClient.findOne({socketId: socket.id})
-        // .exec((err, socketClient) =>{
-        //     if (err) console.log(err);
-        //     if (socketClient) {
-        //         EmployeeTimeIn.find({employee: socket.user._id})
-        //         .populate(
-        //             {
-        //                 path:'employee',
-        //                 select: 'name  pic'
-        //             })
-        //         .limit(1)
-        //         .sort({timeIn: -1})
-        //         .exec(function (err, employeeTimeIns) {
-        //             if (err) console.log(err);
-        //             if (employeeTimeIns.length) {
-        //                 let employee = employeeTimeIns.map(timeIn => {
-        //                     return {
-        //                         name: timeIn.employee.name,
-        //                         pic: timeIn.employee.pic,
-        //                         previousLocation: timeIn.map,
-        //                         isOnline: true,
-        //                         selfie: timeIn.pic
-        //                     }
-        //                 })
-        //                 let e = Object.assign({}, {id: socketClient.employeeId, isOnline: true,});
-        //                 if (socketData.location) Object.assign(e, {currentLocation: socketData.location});
-        //                 console.log(socketData);
-        //                 io.to('adminRoom').emit('sv-sendEmployeeStatus', e);
-
-        //                 if (socketData.battery) Object.assign(e, {battery: socketData.battery});
-        //                 if (socketData.connection) Object.assign(e, {connectionType: socketData.connection});
-        //                 if (socketData.phone) Object.assign(e, {phone: socketData.phone});
-        //                 e = Object.assign({}, e, employee[0]);
-        //                 console.log(socketClient.employeeId);
-        //                 io.to(socket.user._id).emit('sv-sendSelectedEmployeeStatus', e);
-        //                 console.log('Employee status successfully sent to admin');
-        //             } 
-        //         });
-
-                
-        //     }
-        // });
-        
+        });        
     })
 
     // ok
@@ -484,188 +358,66 @@ io.on('connection', (socket) => {
     socket.on('cl-timeIn', (socketdata, clientCallback) => {
         Util.uploadMultiple(socketdata.pics, (err, uploadedImages) => {
             if (err) console.log(err);
-            if(uploadedImages.length) {
-                console.log(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
-                unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
-                    .end(
-                        response => {
-                            let formattedAddress = response.body.results[0].formatted_address;
-                            let employeeTimeIn = new EmployeeTimeIn({
-                                employee: socket.user._id,
-                                timeIn: socketdata.timeIn,
-                                pics: uploadedImages,
-                                scanDecoded: socketdata.scanResult,
-                                map: {
-                                    lng: socketdata.map.lng,
-                                    lat: socketdata.map.lat,
-                                    formattedAddress: formattedAddress
-                                },
-                                batteryStatus: socketdata.batteryStatus,
-                                createdAt: Math.floor(Date.now() /1000)
-                            });
-                
-                            EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
-                                if (err) console.log(err);
-                                if(timeIn){
-                                    console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
-
-                                    clientCallback({
-                                        id: timeIn._id,
-                                        timeIn: socketdata.timeIn,
+            else{
+                if(uploadedImages.length) {
+                    console.log(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
+                    unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
+                        .end(
+                            response => {
+                                let formattedAddress = response.body.results[0].formatted_address;
+                                let employeeTimeIn = new EmployeeTimeIn({
+                                    employee: socket.user._id,
+                                    timeIn: socketdata.timeIn,
+                                    pics: uploadedImages,
+                                    scanDecoded: socketdata.scanResult,
+                                    map: {
+                                        lng: socketdata.map.lng,
+                                        lat: socketdata.map.lat,
                                         formattedAddress: formattedAddress
-                                    })
-                                    
-                                    // socket.emit('sv-successTimeIn', );
-                                    console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
-
-                                    Employee.getEmployeeById(socket.user._id, (err, employee) => {
-                                        if (err) console.log(err)
-                                        if (employee) {
-                                            io.to(socket.user.company).emit('sv-newNotification', {
-                                                id: employeeTimeIn.id,
-                                                isSeen: false,
-                                                name: {
-                                                    firstName: employee.name.firstName,
-                                                    lastName: employee.name.lastName,
-                                                },
-                                                pic: employee.pic.thumb,
-                                                timeIn: employeeTimeIn.timeIn
-                                        });
-                                        }
-                                    })
-                                    
-                                }
-
-                            });
-                        }
-                    );
+                                    },
+                                    batteryStatus: socketdata.batteryStatus,
+                                    createdAt: Math.floor(Date.now() /1000)
+                                });
+                    
+                                EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
+                                    if (err) console.log(err);
+                                    if(timeIn){
+                                        console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
+    
+                                        clientCallback({
+                                            id: timeIn._id,
+                                            timeIn: socketdata.timeIn,
+                                            formattedAddress: formattedAddress
+                                        })
+                                        
+                                        // socket.emit('sv-successTimeIn', );
+                                        console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
+    
+                                        Employee.getEmployeeById(socket.user._id, (err, employee) => {
+                                            if (err) console.log(err)
+                                            if (employee) {
+                                                io.to(socket.user.company).emit('sv-newNotification', {
+                                                    id: employeeTimeIn.id,
+                                                    isSeen: false,
+                                                    name: {
+                                                        firstName: employee.name.firstName,
+                                                        lastName: employee.name.lastName,
+                                                    },
+                                                    pic: employee.pic.thumb,
+                                                    timeIn: employeeTimeIn.timeIn
+                                            });
+                                            }
+                                        })
+                                        
+                                    }
+    
+                                });
+                            }
+                        );
+                }
             }
-        })
-        // cloudinary.v2.uploader.upload(socketdata.pic[0],function(err, result) {
-        //     if (err) {
-        //         console.log('error uploading')
-        //         //console.log(err);
-        //     } else {
-        //         console.log(`Selfie of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
-        //         unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
-        //             .end(
-        //                 response => {
-        //                     let formattedAddress = response.body.results[0].formatted_address;
-        //                     let employeeTimeIn = new EmployeeTimeIn({
-        //                         employee: socket.user._id,
-        //                         timeIn: socketdata.timeIn,
-        //                         pic: {
-        //                             original: result.secure_url,
-        //                             thumb: result.secure_url
-        //                         },
-        //                         map: {
-        //                             lng: socketdata.map.lng,
-        //                             lat: socketdata.map.lat,
-        //                             formattedAddress: formattedAddress
-        //                         },
-        //                         batteryStatus: socketdata.batteryStatus,
-        //                         createdAt: Math.floor(Date.now() /1000)
-        //                     });
-                
-        //                     EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
-        //                         if (err) console.log(err);
-        //                         if(timeIn){
-        //                             console.log(`Time In of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully saved\n`);
-        //                             socket.emit('sv-successTimeIn', {
-        //                                 id: timeIn._id,
-        //                                 timeIn: socketdata.timeIn,
-        //                                 formattedAddress: formattedAddress
-        //                             });
-        //                             console.log(`Response confirmation of time in succesfully sent to ${socket.user.name.firstName} ${socket.user.name.lastName}`)
-
-        //                             Employee.getEmployeeById(socket.user._id, (err, employee) => {
-        //                                 if (err) console.log(err)
-        //                                 if (employee) {
-        //                                     io.to(socket.user.company).emit('sv-newNotification', {
-        //                                     id: employeeTimeIn.id,
-        //                                     isSeen: false,
-        //                                     name: {
-        //                                         firstName: employee.name.firstName,
-        //                                         lastName: employee.name.lastName,
-        //                                     },
-        //                                     pic: employee.pic.thumb,
-        //                                     timeIn: employeeTimeIn.timeIn
-        //                                 });
-        //                                 }
-        //                             })
-                                    
-        //                         }
-
-        //                     });
-        //                 }
-        //             );                                        
-        //     } 
-        // });
-        // Employee.findById(socketdata.employeeId, (err, employee) => {
-        //     let success = false;
-        //     if (err) {
-        //         console.log(err);
-        //     } else if (!employee) {
-        //         console.log(`_id ${socketdata.employeeId} not found`);
-        //     } else {
-        //         console.log(`New Time In From ${employee.name.firstName} ${employee.name.lastName}\nSocket ID: ${socket.id}\n`);
-        //         cloudinary.v2.uploader.upload(socketdata.pic,function(err, result) {
-        //             if (err) {
-        //                 console.log('error uploading')
-        //                 //console.log(err);
-        //             } else {
-        //                 console.log(`Selfie of ${employee.name.firstName} ${employee.name.lastName} successfully uploaded`);
-        //                 unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
-        //                     .end(
-        //                         response => {
-        //                             let employeeTimeIn = new EmployeeTimeIn({
-        //                                 employee: socketdata.employeeId,
-        //                                 timeIn: socketdata.timeIn,
-        //                                 pic: {
-        //                                     original: result.secure_url,
-        //                                     thumb: result.secure_url
-        //                                 },
-        //                                 map: {
-        //                                     lng: socketdata.map.lng,
-        //                                     lat: socketdata.map.lat,
-        //                                     formattedAddress: response.body.results[0].formatted_address
-        //                                 },
-        //                                 batteryStatus: socketdata.batteryStatus
-        //                             });
-        //                             console.log(socketdata.timeIn);
-                        
-        //                             EmployeeTimeIn.addNew(employeeTimeIn, (err, timeIn) => {
-        //                                 if (err) console.log(err);
-        //                                 if(employeeTimeIn){
-        //                                     console.log(`Time In of ${employee.name.firstName} ${employee.name.lastName} successfully saved\n`);
-        //                                     io.to(socket.id).emit('sv-successTimeIn', {
-        //                                         id: employeeTimeIn._id,
-        //                                         timeIn: socketdata.timeIn,
-        //                                         formattedAddress: response.body.results[0].formatted_address
-        //                                     });
-        //                                     console.log(`Response confirmation of time in succesfully sent to ${employee.name.firstName} ${employee.name.lastName}`)
-
-        //                                     io.emit('sv-newNotification', {
-        //                                         id: employeeTimeIn.id,
-        //                                         isSeen: false,
-        //                                         name: {
-        //                                             firstName: employee.name.firstName,
-        //                                             middleName: employee.name.middleName, 
-        //                                             lastName: employee.name.lastName,
-        //                                         },
-        //                                         pic: employee.pic.thumb,
-        //                                         timeIn: employeeTimeIn.timeIn
-        //                                     });
-        //                                 }
-                                        
-                                        
-        //                             });
-        //                         }
-        //                     );                                        
-        //             } 
-        //         });
-        //     }
-        // })        
+            
+        })       
     });
 
     // ok
@@ -837,7 +589,9 @@ io.on('connection', (socket) => {
                     isMe: newMessage.isMe,
                     secret: secret
                 })
-                io.to(employeeId).emit('sv-newMessage', _newMessage);
+                console.log(employeeId);
+                console.log(Object.keys(socket.rooms));
+                io.in(employeeId).emit('sv-newMessage', _newMessage);
 
                 if(!socket.user.isAdmin) {
                     Employee.findById(employeeId, (err, employee) => {
@@ -1029,32 +783,6 @@ io.on('connection', (socket) => {
                 });
             }
         }
-        // SocketClient.findOne({socketId: socket.id})
-        // .exec((err, socketClient) =>{
-        //     if (err) console.log(err);
-        //     if (socketClient) {
-        //         SocketClient.find({ socketId:socket.id }).remove().exec();
-        //         SocketClient.find({employeeId: socketClient.employeeId})
-        //         .exec((err, socketClients) =>{
-        //             if (err) console.log(err);
-        //             if (socketClients) {
-        //                 console.log(`Socket count: ${socketClients.length}`);
-        //                 console.log(socketClients);
-        //                 if (!socketClients.length) {
-                            
-        //                     let d = Object.assign({}, {
-        //                         isOnline: false,
-        //                         id: socketClient.employeeId
-        //                     })
-        //                     console.log(socketClient.employeeId);
-        //                     io.to(socketClient.employeeId).emit('sv-sendSelectedEmployeeStatus', d);
-        //                     io.to('adminRoom').emit('sv-sendEmployeeStatus', d);
-        //                 }
-        //             }
-        //         });
-        //     }
-            
-        // });
 
     });
 

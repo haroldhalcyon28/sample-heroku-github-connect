@@ -1,42 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const Account = require('../models/account');
+
 const jwt = require('jsonwebtoken');
 const config = require('../config/config');
 const passport =  require('passport');
 const Company = require('../models/company');
+const Account = require('../models/account');
 const Employee = require('../models/employee');
 const Util = require('../util/util');
 const ObjectId = require('mongodb').ObjectID;
-
-
-
-// router.get('/', function (req, res) {
-//         let newAccount = new Account(
-//         {
-//             username: 'admin',
-//             password: 'admin',
-//             name: {
-//                 firstName: 'Bryan',
-//                 lastName: 'Adams',
-//                 middleName: ''
-//             },
-//             pic: {
-//                 original: 'http://res.rankedgaming.com/resources/images/profile/default-avatar-male.png',
-//                 thumb: 'http://res.rankedgaming.com/resources/images/profile/default-avatar-male.png'
-//             },
-//             isAdmin: true
-//         }
-//     )
-//     Account.addNew(newAccount, (err, account) => {
-//         if (err) throw err;
-//         console.log(account);
-//     })
-
-
-//     res.json({ a: 1 });
-// });
-
 
 router.post('/', function (req, res) {
     console.log(req);
@@ -44,63 +16,40 @@ router.post('/', function (req, res) {
 });
 
 router.post('/authenticate', function (req, res) {
-    let query = {
-        username: req.body.username,
-        password: req.body.password,
-        isAdmin: req.body.isAdmin ? true : false
-    }
+    let username = req.body.username;
+    let password = req.body.password;
+    let isAdmin = req.body.isAdmin ? true : false;
 
-    Account.getAccountByQuery(query, (err, account) => {
-        
+    Account.authenticate(username, password, isAdmin, (err, failed, account) => {
         if(err) console.log(err);
-        if(!account){
+        if(failed){
             return res.json({success: false, msg: 'Your username or password is incorrect'});
         }
-        Account.comparePassword(query.password, account.password, (err, isMatch) => {
-            if(err) throw err;
-            if(isMatch){
-                const token = jwt.sign(
-                    {data: {
-                        _id: account._id,
-                        isAdmin: account.isAdmin
-                    }}, 
-                    config.secret,
-                    {expiresIn: 604800}
-                );
-
-                res.json({success: true, token: token})
-            } else{
-                return res.json({success: false, msg: 'Your username or password is incorrect'});
-            }
-        })
+        if(account){
+            console.log(account);
+            const token = jwt.sign(
+                {data: {
+                    _id: account._id,
+                    isAdmin: account.isAdmin ? account.isAdmin : false 
+                }}, 
+                config.secret,
+                {expiresIn: 604800}
+            );
+            res.json({success: true, token: token})
+        }
+        
     })
 });
 
 router.post('/check-authentication', passport.authenticate('jwt', {session:false}), function (req, res, next) {
     console.log('Cheking authentication token');
     let user;
-    if(req.user.isAdmin){
-        user = Object.assign({}, {
-            name: req.user.name,
-            pic: req.user.pic,
-            _id: req.user._id
-        })
-        res.json(user);
-    }
-    else{
-        Employee.getEmployeeById(req.user._id, (err, employee) => {
-            if(err) console.log(err);
-            if(employee){
-                user = Object.assign({}, {
-                    _id: employee._id,
-                    name: employee.name,
-                    pic: employee.pic
-                });
-                res.json(user);
-            }
-        })
-    }
-    
+    user = Object.assign({}, {
+        name: req.user.name,
+        pic: req.user.pic,
+        _id: req.user._id
+    })
+    res.json(user);
 });
 
 router.post('/company', passport.authenticate('jwt', {session:false}), function (req, res, next) {
