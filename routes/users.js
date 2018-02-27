@@ -12,7 +12,7 @@ const ObjectId = require('mongodb').ObjectID;
 
 router.get('/', function (req, res) {
     console.log(req);
-    res.send('test');
+    res.send('test1');
 });
 
 router.post('/authenticate', function (req, res) {
