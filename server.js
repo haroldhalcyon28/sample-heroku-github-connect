@@ -14,6 +14,7 @@ const path = require('path');
 const unirest = require('unirest');
 const PORT = process.env.PORT || 8080;
 const INDEX = path.join(__dirname, 'index.html');
+var _ = require('lodash');
 
 const Account = require('./models/account');
 const Employee = require('./models/employee');
@@ -791,7 +792,7 @@ io.on('connection', (socket) => {
 });
 
 function getClientsInRoom(_io, employeeId, handleDisconnection){
-    let clients = Object.values(_io.sockets);
+    let clients = _.values(_io.sockets);
 
     if(handleDisconnection){
         let clientCount = 0;
