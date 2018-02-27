@@ -68,33 +68,37 @@ module.exports.checkEmployeeAccount = (_id, callback) => {
 
 module.exports.authenticate = (username, password, isAdmin, callback) => {
     Account.findOne({username: username, isAdmin: isAdmin}, (err, account) => {
-        if(err) console.log(err);
-        if(account){
-            Account.comparePassword(password, account.password, (_err, isMatch) => {
-                if(_err) console.log(_err);
-                if(isMatch){
-                    if(account.isAdmin){
-                        callback(null, false, account);
-                    }
-                    else{
-                        Account.checkEmployeeAccount(account._id, (__err, __account) => {
-                            if(__account.length){
-                                callback(null, false, __account[0]);
-                            }
-                            else{
-                                callback(_err, true, null);
-                            }
-                        })
-                    }
-                    
-                }
-                else{
-                    callback(_err, true, null);
-                }
-            })
+        if(err) {
+            callback(err, true, null);
         }
         else{
-            callback(_err, true, null);
+            if(account){
+                Account.comparePassword(password, account.password, (_err, isMatch) => {
+                    if(_err) console.log(_err);
+                    if(isMatch){
+                        if(account.isAdmin){
+                            callback(null, false, account);
+                        }
+                        else{
+                            Account.checkEmployeeAccount(account._id, (__err, __account) => {
+                                if(__account.length){
+                                    callback(null, false, __account[0]);
+                                }
+                                else{
+                                    callback(_err, true, null);
+                                }
+                            })
+                        }
+                        
+                    }
+                    else{
+                        callback(_err, true, null);
+                    }
+                })
+            }
+            else{
+                callback(null, true, null);
+            }
         }
     })
 }
