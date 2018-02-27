@@ -10,7 +10,7 @@ const Employee = require('../models/employee');
 const Util = require('../util/util');
 const ObjectId = require('mongodb').ObjectID;
 
-router.post('/', function (req, res) {
+router.get('/', function (req, res) {
     console.log(req);
     res.send('test');
 });
