@@ -172,3 +172,79 @@ module.exports.getUnseenLogsCount = (company, callback) => {
         ])
     .exec(callback)
 }
+
+module.exports.getLastTimeIn = (company, callback) => {
+    EmployeeTimeIn.aggregate(
+        [   { $lookup: {
+                    from: "employees",
+                    localField: "employee",
+                    foreignField: "_id",
+                    as: "employeeDetails"
+                }
+            },
+            { $match: {
+                "employeeDetails.deleted": false,
+                "employeeDetails.company": ObjectId(company)
+                }
+            },
+            { 
+                $project : { 
+                    _id: 1,
+                    timeIn: 1,
+                    "employeeDetails.company": 1
+                } 
+            },
+            { $group: {
+                _id: {
+                    id: "$_id",
+                    timeIn: "$timeIn",
+                    company: "$employeeDetails.company"
+
+                } 
+            }},
+            { $sort: {"_id.timeIn": -1 } },
+            { $limit: 1}                
+        ])
+    .exec(callback)
+}
+
+module.exports.getLatestUpdate = (employeeTimeIn, callback) => {
+
+    EmployeeTimeIn.aggregate(
+        [   { $lookup: {
+                    from: "employees",
+                    localField: "employee",
+                    foreignField: "_id",
+                    as: "employeeDetails"
+                }
+            },
+            { $match: {
+                "employeeDetails.company": ObjectId(employeeTimeIn.company),
+                "employeeDetails.deleted": false,
+                timeIn: {$gt: employeeTimeIn.timeIn}
+                }
+            },
+            { 
+                $project : { 
+                    _id: 1,
+                    employee: 1,
+                    "employeeDetails.name": 1,
+                    "employeeDetails.pic": 1,
+                    timeIn: 1,
+                    isSeen: 1
+                } 
+            },
+            { $group: {
+                _id: {
+                    id: "$_id",
+                    name: "$employeeDetails.name",
+                    pic: "$employeeDetails.pic",
+                    timeIn: "$timeIn",
+                    isSeen: "$isSeen",
+                    employeeId: "$employee"
+                } 
+            }},
+            { $sort: {"_id.timeIn": 1 } },          
+        ])
+    .exec(callback)
+}

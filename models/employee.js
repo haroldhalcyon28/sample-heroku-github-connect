@@ -8,6 +8,7 @@ const config = require('../config/config');
 const cloudinary = config.cloudinary;
 
 const Util = require('../util/util');
+var _ = require('lodash');
 
 // mongodb collection name is case sensitive (‘Campaigns’ is different from ‘campaigns’)
 // mongodb best practises is to have all lower case for collection name (‘campaigns’ is preferred)
@@ -83,7 +84,7 @@ module.exports.addNew = (_newEmployee, callback) => {
                         if(result) {
                             newEmployee.pic = {
                                 original: result.secure_url,
-                                thumb: result.secure_url
+                                thumb: Util.thumbnail(result.secure_url, {profile: true})
                             }
                             newEmployee.save(callback);
                         }
@@ -110,15 +111,15 @@ module.exports.addNew = (_newEmployee, callback) => {
 }
 
 module.exports.update = (employee, callback) => {
-    let pic = '';
+    let pic = {};
     function _update(){
         Employee.findById(employee._id, (err, _employee) => {
             if(err) console.log(err);
             if(_employee){
                 _employee.name = employee.name;
-                if(pic){
-                    _employee.pic.original = pic;
-                    _employee.pic.thumb = pic;
+                if(!_.isEmpty(pic)){
+                    _employee.pic.original = pic.original;
+                    _employee.pic.thumb = pic.thumb;
                 }
                 _employee.save((__err, __employee) => {
                     if(!err && __employee){
@@ -135,7 +136,10 @@ module.exports.update = (employee, callback) => {
         Util.upload(employee.pic, (err, result) => {
             if (err) console.log(err);
             if(result) {
-                pic = result.secure_url;
+                pic = {
+                    original:result.secure_url,
+                    thumb: Util.thumbnail(result.secure_url, {profile: true})
+                }
                 _update();
             }
         })

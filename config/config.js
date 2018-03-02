@@ -10,7 +10,7 @@
 
 
 
-module.exports.database = {uri: 'mongodb://intern1234:Maancel1@ds249818.mlab.com:49818/mydb'}; //prod
+module.exports.database = {uri: 'mongodb://intern1234:johnp@ds129422.mlab.com:29422/mydb'}; //prod
 // module.exports.database = {uri: 'mongodb://localhost:27017/mydb'}; //dev
 module.exports.secret = 'johnp';
 
