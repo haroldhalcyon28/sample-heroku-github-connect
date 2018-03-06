@@ -7,7 +7,7 @@
     "node": "6.2.0"
   },
   "scripts": {
-    "start": "service mongod start & node ./node_modules/.bin/pm2-runtime server.js --watch"
+    "start": "node ./node_modules/.bin/pm2-runtime server.js --watch"
   },
   "keywords": [],
   "author": "",
