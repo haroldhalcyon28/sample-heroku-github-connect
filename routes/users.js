@@ -216,7 +216,12 @@ router.delete('/company/:id', passport.authenticate('jwt', {session:false}), fun
     Company.findById(req.params.id, (err, company) => {
         company.deleted = true;
         company.save((err, company) => {
-            console.log(`Company ${company.name} successfully soft deleted`);
+            let msg = `Company ${company.name} successfully soft deleted`;
+            res.json({
+                success: true,
+                msg: msg
+            })
+            console.log(msg);
         })
     })
 

@@ -74,6 +74,16 @@ var DEBUG = (function () {
 //     }
 // })
 
+// (async (nes) => {
+//     let das = await new Promise(resolve => {
+//         setTimeout(() => {
+//             resolve(nes);
+//         }, 3000)
+//     })
+//     return das
+// })('hello world').then(dsad => {
+//     console.log(dsad + 321)
+// });
 
 
 // const server = express()
