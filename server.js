@@ -397,7 +397,7 @@ io.on('connection', (socket) => {
             else{
                 if(uploadedImages.length) {
                     logger.debug(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
-                    unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
+                    unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyBdEUm4xuDHo1gQL9M-EFrfIUQJdnCMP3Y`)
                         .end(
                             response => {
                                 console.log("RESPONSE", response);
