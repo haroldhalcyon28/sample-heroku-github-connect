@@ -400,6 +400,7 @@ io.on('connection', (socket) => {
                     unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyDuOss95cF1Xa6hfbn7M_fC7plWH9GCnj8`)
                         .end(
                             response => {
+                                console.log("RESPONSE", response);
                                 let formattedAddress = response.body.results[0].formatted_address;
                                 let employeeTimeIn = new EmployeeTimeIn({
                                     employee: socket.user._id,
