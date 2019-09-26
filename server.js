@@ -397,11 +397,11 @@ io.on('connection', (socket) => {
             else{
                 if(uploadedImages.length) {
                     logger.debug(`Selfies of ${socket.user.name.firstName} ${socket.user.name.lastName} successfully uploaded`);
-                    unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyBdEUm4xuDHo1gQL9M-EFrfIUQJdnCMP3Y`)
-                        .end(
-                            response => {
-                                console.log("RESPONSE", response);
-                                let formattedAddress = response.body.results[0].formatted_address;
+                    // unirest.get(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${socketdata.map.lat},${socketdata.map.lng}&key=AIzaSyBdEUm4xuDHo1gQL9M-EFrfIUQJdnCMP3Y`)
+                    //     .end(
+                    //         response => {
+                                // console.log("RESPONSE", response);
+                                // let formattedAddress = response.body.results[0].formatted_address;
                                 let employeeTimeIn = new EmployeeTimeIn({
                                     employee: socket.user._id,
                                     timeIn: socketdata.timeIn,
@@ -410,7 +410,7 @@ io.on('connection', (socket) => {
                                     map: {
                                         lng: socketdata.map.lng,
                                         lat: socketdata.map.lat,
-                                        formattedAddress: formattedAddress
+                                        formattedAddress: socketdata.map.formattedAddress
                                     },
                                     batteryStatus: socketdata.batteryStatus,
                                     createdAt: Math.floor(Date.now() /1000)
@@ -451,8 +451,8 @@ io.on('connection', (socket) => {
                                     }
     
                                 });
-                            }
-                        );
+                        //     }
+                        // );
                 }
             }
             
